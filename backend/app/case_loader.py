@@ -126,6 +126,7 @@ def _build_case(case_dir: Path) -> Case:
         pcr_path=str(pcr_path),
         video_path=str(video_path),
         audio_path=str(audio_path),
+        cad_path=str(case_dir / "cad.json") if (case_dir / "cad.json").exists() else None,
         metadata={},
     )
 

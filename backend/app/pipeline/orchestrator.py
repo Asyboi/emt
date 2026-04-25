@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from app.case_loader import load_pcr_content
 from app.pipeline import (
     audio_analyzer,
+    cad_parser,
     drafting,
     findings as findings_stage,
     pcr_parser,
@@ -24,7 +25,9 @@ from app.pipeline import (
     reconciliation,
     video_analyzer,
 )
+from app.pipeline.cad_parser import safe_cad_parse
 from app.schemas import (
+    CADRecord,
     Case,
     PipelineProgress,
     PipelineStage,
@@ -70,6 +73,11 @@ async def _run_stage(
 
 
 async def process_case(case: Case, progress_callback: ProgressCallback) -> QICaseReview:
+    cad_task = _run_stage(
+        PipelineStage.CAD_PARSING,
+        lambda: safe_cad_parse(case.cad_path),
+        progress_callback,
+    )
     pcr_task = _run_stage(
         PipelineStage.PCR_PARSING,
         lambda: pcr_parser.parse_pcr(case),
@@ -85,7 +93,16 @@ async def process_case(case: Case, progress_callback: ProgressCallback) -> QICas
         lambda: audio_analyzer.analyze_audio(case),
         progress_callback,
     )
-    pcr, video, audio = await asyncio.gather(pcr_task, video_task, audio_task)
+    cad_record, pcr, video, audio = await asyncio.gather(
+        cad_task, pcr_task, video_task, audio_task
+    )
+
+    # Select protocol families from CAD — fall back to cardiac_arrest for demo
+    protocol_families = (
+        cad_record.protocol_families
+        if cad_record and cad_record.protocol_families
+        else ["cardiac_arrest"]
+    )
 
     timeline = await _run_stage(
         PipelineStage.RECONCILIATION,
@@ -94,7 +111,7 @@ async def process_case(case: Case, progress_callback: ProgressCallback) -> QICas
     )
     checks = await _run_stage(
         PipelineStage.PROTOCOL_CHECK,
-        lambda: protocol_check.check_protocol(timeline, case.incident_type),
+        lambda: protocol_check.check_protocol(timeline, protocol_families[0]),
         progress_callback,
     )
     found = await _run_stage(
@@ -109,4 +126,5 @@ async def process_case(case: Case, progress_callback: ProgressCallback) -> QICas
         lambda: drafting.draft_qi_review(case, timeline, found, checks, pcr_content),
         progress_callback,
     )
+    review.cad_record = cad_record
     return review

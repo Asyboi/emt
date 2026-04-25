@@ -9,6 +9,7 @@ class EventSource(str, Enum):
     PCR = "pcr"
     VIDEO = "video"
     AUDIO = "audio"
+    CAD = "cad"
 
 
 class EventType(str, Enum):
@@ -83,6 +84,48 @@ class FindingCategory(str, Enum):
     PHANTOM_INTERVENTION = "phantom_intervention"
     PROTOCOL_DEVIATION = "protocol_deviation"
     CARE_GAP = "care_gap"
+    RESPONSE_TIME_VIOLATION = "response_time_violation"
+
+
+class GeoPoint(BaseModel):
+    lat: float
+    lng: float
+    elevation_m: Optional[float] = None
+
+
+class IncidentDisposition(str, Enum):
+    ALS_TRANSPORT = "82"
+    BLS_TRANSPORT = "83"
+    PRONOUNCED_DEAD = "84"
+    UNFOUNDED = "90"
+    REFUSED_TREATMENT = "93"
+    NOT_TRANSPORTED = "95"
+    GONE_ON_ARRIVAL = "96"
+    CANCELLED = "97"
+    UNKNOWN = "99"
+
+
+class CADRecord(BaseModel):
+    cad_incident_id: str
+    incident_datetime: datetime
+    initial_call_type: str
+    initial_severity_level_code: int
+    final_call_type: str
+    final_severity_level_code: int
+    first_assignment_datetime: datetime
+    first_activation_datetime: datetime
+    first_on_scene_datetime: datetime
+    first_to_hosp_datetime: Optional[datetime] = None
+    first_hosp_arrival_datetime: Optional[datetime] = None
+    incident_close_datetime: datetime
+    dispatch_response_seconds: Optional[int] = None
+    incident_response_seconds: Optional[int] = None
+    incident_travel_seconds: Optional[int] = None
+    incident_disposition_code: IncidentDisposition = IncidentDisposition.UNKNOWN
+    borough: Optional[str] = None
+    zipcode: Optional[str] = None
+    incident_location: Optional[GeoPoint] = None
+    protocol_families: list[str] = Field(default_factory=list)
 
 
 class Finding(BaseModel):
@@ -231,6 +274,9 @@ class QICaseReview(BaseModel):
     reviewer_notes: str = ""
     human_reviewed: bool = False
 
+    # CAD enrichment (optional — absent when no cad.json exists for the case)
+    cad_record: Optional[CADRecord] = None
+
 
 class Case(BaseModel):
     case_id: str
@@ -239,10 +285,12 @@ class Case(BaseModel):
     pcr_path: str
     video_path: str
     audio_path: str
+    cad_path: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class PipelineStage(str, Enum):
+    CAD_PARSING = "cad_parsing"
     PCR_PARSING = "pcr_parsing"
     VIDEO_ANALYSIS = "video_analysis"
     AUDIO_ANALYSIS = "audio_analysis"
