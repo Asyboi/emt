@@ -1,6 +1,0 @@
-# Cloudflare Pages custom headers.
-# Deploys from frontend/ root alongside the dist/ build output.
-# Add header rules here, e.g.:
-#   /*
-#     X-Frame-Options: DENY
-#     Referrer-Policy: strict-origin-when-cross-origin
