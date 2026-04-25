@@ -50,6 +50,40 @@ class TimelineEntry(BaseModel):
     has_discrepancy: bool
 
 
+class EventCluster(BaseModel):
+    cluster_id: str
+    event_ids: list[str]
+    centroid_timestamp_seconds: float
+    source_types: list[EventSource]
+
+
+class DiscrepancyType(str, Enum):
+    TIMING = "timing"
+    CLINICAL = "clinical"
+    PHANTOM = "phantom"
+    MISSING = "missing"
+    NONE = "none"
+
+
+class ScoredCluster(BaseModel):
+    cluster_id: str
+    event_ids: list[str]
+    centroid_timestamp_seconds: float
+    source_types: list[EventSource]
+    discrepancy_score: float
+    discrepancy_type: DiscrepancyType
+    discrepancy_reasoning: str
+
+
+class DraftTimelineEntry(BaseModel):
+    cluster_id: str
+    event_ids: list[str]
+    canonical_timestamp_seconds: float
+    event_type: EventType
+    canonical_description: str
+    match_confidence: float
+
+
 class ProtocolStep(BaseModel):
     step_id: str
     description: str

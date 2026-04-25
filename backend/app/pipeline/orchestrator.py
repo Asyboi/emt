@@ -106,7 +106,7 @@ async def process_case(case: Case, progress_callback: ProgressCallback) -> QICas
 
     timeline = await _run_stage(
         PipelineStage.RECONCILIATION,
-        lambda: reconciliation.reconcile(pcr, video, audio),
+        lambda: reconciliation.reconcile(pcr, video, audio, cad_record=cad_record),
         progress_callback,
     )
     checks = await _run_stage(
