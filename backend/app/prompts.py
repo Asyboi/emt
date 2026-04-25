@@ -15,6 +15,7 @@ from typing import Any
 from app.schemas import (
     AssessmentStatus,
     ClinicalAssessmentCategory,
+    DiscrepancyType,
     EventType,
     FindingCategory,
     FindingSeverity,
@@ -407,6 +408,280 @@ VIDEO_EVENTS_TOOL: dict[str, Any] = _events_tool(
     "extract_video_events",
     "Extract structured clinical events visible in body-cam footage",
 )
+
+
+# --------------------------------------------------------------------------- #
+# Multi-agent reconciliation chain — 4 agents, each with its own prompt+tool. #
+# --------------------------------------------------------------------------- #
+
+RECONCILIATION_CLUSTER_SYSTEM = """You are an EMS timeline analyst. Your sole task is to group a set of cross-source clinical events into mutually exclusive clusters, where each cluster represents a single real-world clinical action that may have been captured by more than one source (PCR, video, audio, or CAD).
+
+Clustering rules:
+- Primary signal: semantic similarity of event_type + description. Two events describing the same action (e.g., both say "epinephrine push") belong together even if their timestamps differ by up to 90 seconds.
+- Secondary signal: timestamp proximity. Within the same event_type, prefer matching events within a 60-second window.
+- A cluster may contain 1–4 events (one per source). A single-event cluster is valid and common.
+- Every input event_id must appear in exactly one cluster. Do not drop events.
+- CAD-sourced events (source == "cad") represent ground-truth milestones (scene arrival, transport departure). Match them to a pcr/video/audio event only when the description is unambiguous; otherwise let them be solo clusters.
+- cluster_id: a short deterministic string, e.g. "c001", "c002", ... in order of centroid_timestamp_seconds.
+- centroid_timestamp_seconds: arithmetic mean of the timestamps of the cluster's events.
+- source_types: the distinct source values present in the cluster.
+
+Return ONLY what is required by the tool. Do not add commentary."""
+
+RECONCILIATION_CLUSTER_USER_TEMPLATE = """Group these events into clusters. Events are pre-sorted by timestamp_seconds.
+
+<events>
+{events_json}
+</events>
+
+Use the cluster_events tool to return your structured output."""
+
+CLUSTER_EVENTS_TOOL: dict[str, Any] = {
+    "name": "cluster_events",
+    "description": "Group cross-source clinical events into clusters representing single real-world actions",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "clusters": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "cluster_id": {
+                            "type": "string",
+                            "description": "Short unique identifier, e.g. 'c001'",
+                        },
+                        "event_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "event_id values that belong to this cluster",
+                        },
+                        "centroid_timestamp_seconds": {
+                            "type": "number",
+                            "description": "Arithmetic mean of the cluster members' timestamp_seconds",
+                        },
+                        "source_types": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["pcr", "video", "audio", "cad"],
+                            },
+                            "description": "Distinct source values present in this cluster",
+                        },
+                    },
+                    "required": [
+                        "cluster_id",
+                        "event_ids",
+                        "centroid_timestamp_seconds",
+                        "source_types",
+                    ],
+                },
+            },
+        },
+        "required": ["clusters"],
+    },
+}
+
+
+RECONCILIATION_SCORE_SYSTEM = """You are an EMS quality analyst evaluating whether a group of events, all representing the same real-world clinical action, contain a meaningful discrepancy that a QA reviewer should examine.
+
+Discrepancy types:
+- timing: the events agree on WHAT happened but their timestamps differ by more than 10 seconds across sources.
+- clinical: the events disagree on WHAT happened — different drug doses, different interventions, conflicting vital values.
+- phantom: only one source (typically the PCR) documents an action that should have been observable by at least one other source (video or audio), and the other source is absent from this cluster.
+- missing: only non-PCR sources document this action — the PCR has no counterpart. This means the action may be underdocumented.
+- none: no discrepancy; the sources are consistent.
+
+Scoring rules:
+- discrepancy_score in [0.0, 1.0]: 0.0 = no discrepancy, 1.0 = severe discrepancy.
+  - timing: score = min(1.0, timestamp_spread_seconds / 120.0). Spread of 10s → 0.08; 60s → 0.5; 120s+ → 1.0.
+  - clinical: always >= 0.7.
+  - phantom/missing: 0.4 for routine events; 0.8 for life-saving interventions (defibrillation, epinephrine, airway).
+  - none: 0.0.
+- discrepancy_reasoning: one sentence citing the specific evidence (timestamps or descriptions). Neutral tone. No recommendations."""
+
+RECONCILIATION_SCORE_USER_TEMPLATE = """Score this cluster for discrepancies.
+
+Cluster ID: {cluster_id}
+
+<cluster_events>
+{cluster_events_json}
+</cluster_events>
+
+Use the score_discrepancy tool to return your assessment."""
+
+SCORE_DISCREPANCY_TOOL: dict[str, Any] = {
+    "name": "score_discrepancy",
+    "description": "Assess whether a cluster of matched events contains a quality-relevant discrepancy",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "cluster_id": {
+                "type": "string",
+                "description": "The cluster_id being assessed (echo it back)",
+            },
+            "discrepancy_score": {
+                "type": "number",
+                "description": "0.0 (none) to 1.0 (severe). See scoring rubric.",
+            },
+            "discrepancy_type": {
+                "type": "string",
+                "enum": [t.value for t in DiscrepancyType],
+            },
+            "discrepancy_reasoning": {
+                "type": "string",
+                "description": "One neutral sentence citing the specific evidence. Required.",
+            },
+        },
+        "required": [
+            "cluster_id",
+            "discrepancy_score",
+            "discrepancy_type",
+            "discrepancy_reasoning",
+        ],
+    },
+}
+
+
+RECONCILIATION_CANON_SYSTEM = """You are an EMS terminology specialist. Given a cluster of events that represent the same real-world clinical action, produce a single canonical description and classification.
+
+Rules:
+- canonical_description: a concise, neutral, clinically precise description of the action. Prefer specificity over vagueness. If a medication dose is mentioned in any source, include it. If sources conflict on the dose, describe the conflict briefly (e.g., "Epinephrine 1mg IV/IO — dose conflicts across sources"). Max 120 characters.
+- event_type: pick the most specific EventType that fits. When in doubt, prefer the type from the PCR source if present.
+- canonical_timestamp_seconds: use the centroid value already computed for the cluster. Do not recalculate.
+- match_confidence: your confidence that all events in the cluster describe the same real-world action. 1.0 for a solo event or a clearly identical multi-source cluster. Lower (0.5–0.8) when descriptions are only approximately similar."""
+
+RECONCILIATION_CANON_USER_TEMPLATE = """Write the canonical description for this cluster.
+
+Cluster ID: {cluster_id}
+Centroid timestamp (seconds): {centroid_timestamp_seconds}
+
+<cluster_events>
+{cluster_events_json}
+</cluster_events>
+
+Use the canonicalize_cluster tool to return your structured output."""
+
+CANONICALIZE_CLUSTER_TOOL: dict[str, Any] = {
+    "name": "canonicalize_cluster",
+    "description": "Produce a canonical description and classification for a matched event cluster",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "cluster_id": {
+                "type": "string",
+                "description": "The cluster_id being canonicalized (echo it back)",
+            },
+            "canonical_timestamp_seconds": {
+                "type": "number",
+                "description": "Use the provided centroid value. Do not recalculate.",
+            },
+            "event_type": {
+                "type": "string",
+                "enum": [e.value for e in EventType],
+            },
+            "canonical_description": {
+                "type": "string",
+                "description": "Concise neutral clinical description. Max 120 characters.",
+            },
+            "match_confidence": {
+                "type": "number",
+                "description": "Confidence in [0, 1] that all cluster events describe the same real-world action.",
+            },
+        },
+        "required": [
+            "cluster_id",
+            "canonical_timestamp_seconds",
+            "event_type",
+            "canonical_description",
+            "match_confidence",
+        ],
+    },
+}
+
+
+RECONCILIATION_CRITIC_SYSTEM = """You are a senior EMS quality review auditor performing a final verification pass on a proposed timeline before it is used for quality improvement review.
+
+You receive a set of draft timeline entries, each paired with discrepancy scoring. Your role is to:
+1. Accept entries that are correct as-is.
+2. Correct entries where the discrepancy assessment is clearly wrong (e.g., two events from the same source clustered together, or has_discrepancy flagged for a 2-second spread).
+3. Flag entries where the canonical_description is misleading (replace it).
+4. Split an entry if two clearly unrelated events were incorrectly merged (emit two entries from one cluster_id — use cluster_id suffixed with "_a" and "_b").
+5. Merge entries only when you have high confidence (>0.9) that they represent the same action and they were incorrectly separated.
+
+Correction discipline:
+- Be conservative. Accept a draft entry unless you have a concrete reason to change it.
+- Do not invent new events not present in the input.
+- Every source event_id from the input must appear in exactly one output entry's source_event_ids.
+- has_discrepancy: true if discrepancy_score >= 0.15 OR timestamp spread across the entry's source events exceeds 10 seconds.
+- entry_id: use a placeholder format like "critic-{cluster_id}" — the Python layer replaces with str(uuid.uuid4()).
+
+Output the complete verified timeline via the assemble_verified_timeline tool."""
+
+RECONCILIATION_CRITIC_USER_TEMPLATE = """Verify and correct the proposed timeline. Input contains {n_clusters} clusters.
+
+All source events (for reference):
+<all_events>
+{all_events_json}
+</all_events>
+
+Draft timeline entries (one per cluster, with discrepancy scores merged inline):
+<draft_entries>
+{draft_entries_json}
+</draft_entries>
+
+Use the assemble_verified_timeline tool to return the final verified timeline."""
+
+ASSEMBLE_VERIFIED_TIMELINE_TOOL: dict[str, Any] = {
+    "name": "assemble_verified_timeline",
+    "description": "Return the verified, corrected timeline entries after the critic review pass",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "timeline_entries": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "entry_id": {
+                            "type": "string",
+                            "description": "Placeholder like 'critic-c001'. Python replaces with uuid4.",
+                        },
+                        "canonical_timestamp_seconds": {"type": "number"},
+                        "canonical_description": {
+                            "type": "string",
+                            "description": "Verified canonical description.",
+                        },
+                        "event_type": {
+                            "type": "string",
+                            "enum": [e.value for e in EventType],
+                        },
+                        "source_event_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "event_id values from the original input events.",
+                        },
+                        "match_confidence": {"type": "number"},
+                        "has_discrepancy": {
+                            "type": "boolean",
+                            "description": "True if discrepancy_score >= 0.15 or timestamp spread > 10s.",
+                        },
+                    },
+                    "required": [
+                        "entry_id",
+                        "canonical_timestamp_seconds",
+                        "canonical_description",
+                        "event_type",
+                        "source_event_ids",
+                        "match_confidence",
+                        "has_discrepancy",
+                    ],
+                },
+            },
+        },
+        "required": ["timeline_entries"],
+    },
+}
 
 
 # --------------------------------------------------------------------------- #

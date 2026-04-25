@@ -1,6 +1,6 @@
 // Mirrors backend/app/schemas.py — keep in sync. Updated to QICaseReview structure.
 
-export type EventSource = "pcr" | "video" | "audio";
+export type EventSource = "pcr" | "video" | "audio" | "cad";
 
 export type EventType =
   | "medication"
@@ -67,7 +67,8 @@ export type FindingCategory =
   | "missing_documentation"
   | "phantom_intervention"
   | "protocol_deviation"
-  | "care_gap";
+  | "care_gap"
+  | "response_time_violation";
 
 export interface Finding {
   finding_id: string;
@@ -168,6 +169,38 @@ export type ReviewerDetermination =
 
 export type PatientSex = "m" | "f" | "unknown";
 
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+  elevation_m?: number;
+}
+
+export type IncidentDisposition =
+  | "82" | "83" | "84" | "90" | "93" | "95" | "96" | "97" | "99";
+
+export interface CADRecord {
+  cad_incident_id: string;
+  incident_datetime: string;
+  initial_call_type: string;
+  initial_severity_level_code: number;
+  final_call_type: string;
+  final_severity_level_code: number;
+  first_assignment_datetime: string;
+  first_activation_datetime: string;
+  first_on_scene_datetime: string;
+  first_to_hosp_datetime?: string;
+  first_hosp_arrival_datetime?: string;
+  incident_close_datetime: string;
+  dispatch_response_seconds?: number;
+  incident_response_seconds?: number;
+  incident_travel_seconds?: number;
+  incident_disposition_code: IncidentDisposition;
+  borough?: string;
+  zipcode?: string;
+  incident_location?: GeoPoint;
+  protocol_families: string[];
+}
+
 export interface QICaseReview {
   case_id: string;
   generated_at: string;
@@ -197,6 +230,8 @@ export interface QICaseReview {
 
   reviewer_notes: string;
   human_reviewed: boolean;
+
+  cad_record?: CADRecord;
 }
 
 export interface Case {
@@ -206,10 +241,12 @@ export interface Case {
   pcr_path: string;
   video_path: string;
   audio_path: string;
+  cad_path?: string;
   metadata: Record<string, unknown>;
 }
 
 export type PipelineStage =
+  | "cad_parsing"
   | "pcr_parsing"
   | "video_analysis"
   | "audio_analysis"
