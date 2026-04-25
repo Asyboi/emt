@@ -5,6 +5,84 @@ after every meaningful change. Newest entries at the top of each section.
 
 ## Completed
 
+### QI Case Review Update — Step 1: Schema (2026-04-25)
+
+Renamed `AARDraft` → `QICaseReview` and extended the model to match how
+real EMS QA programs structure single-incident reviews. Schema-only change
+per `qi_review_update_prompts.md` Step 1; pipeline / API / UI consumers
+intentionally unchanged this step and tracked as outstanding work below.
+
+**Backend.**
+
+- `backend/app/schemas.py` — adds `CrewMember`,
+  `ClinicalAssessmentCategory`, `AssessmentStatus`, `ClinicalAssessmentItem`,
+  `DocumentationQualityAssessment`, `UtsteinData`, `RecommendationAudience`,
+  `RecommendationPriority`, `Recommendation`, `ReviewerDetermination`.
+  Replaces `AARDraft` with `QICaseReview` (header section: incident
+  metadata + crew + anonymized patient demographics; body: incident
+  summary, timeline, clinical assessment, documentation quality, findings,
+  protocol checks, adherence score; optional Utstein data; closing:
+  recommendations, determination + rationale; reviewer state). All
+  pre-existing models unchanged.
+- `backend/tests/test_schemas.py` — validates the new fixture against
+  `QICaseReview` and asserts: ≥3 timeline entries, ≥4 findings,
+  ≥5 protocol checks, ≥8 clinical assessment items, ≥3 recommendations,
+  `utstein_data` present with `rosc_achieved=True`, determination
+  `performance_concern`.
+
+**Fixtures.**
+
+- `fixtures/sample_aar.json` deleted; `fixtures/sample_qi_review.json`
+  added. Same 3 timeline entries / 4 findings / 5 protocol checks as the
+  old fixture, plus: 2 crew members (P-001 primary, P-002 secondary
+  paramedic), patient_age_range "60-69" / patient_sex "m", chief
+  complaint "Witnessed cardiac arrest", responding_unit "Medic 51",
+  10 clinical assessment items spanning 8 categories with a mix of
+  MET/NOT_MET/INSUFFICIENT_DOCUMENTATION, documentation_quality
+  (0.78 / 0.65 / 0.82 with three issues tied to the existing findings),
+  full Utstein record (witnessed VF, bystander CPR, ROSC achieved,
+  `transferred_with_rosc`), 4 recommendations (2 crew, 1 agency,
+  1 follow-up; required → informational priority spread) whose
+  `related_finding_ids` reference the existing finding IDs, and a
+  `performance_concern` determination with rationale.
+
+**TypeScript.**
+
+- `frontend/src/types/schemas.ts` — mirrors every new Pydantic model
+  (snake_case preserved). Old `AARDraft` removed; `QICaseReview` added
+  with all fields and literal-union enums. Header comment updated.
+
+**Verification — 2026-04-25.**
+
+- `cd backend && uv run pytest tests/test_schemas.py -v` →
+  **1 passed** (test_sample_qi_review_fixture_validates).
+- `cd backend && uv run ruff check app tests` → all checks passed.
+- `cd frontend && npm run typecheck` → fails with 9 expected errors,
+  all of them downstream `AARDraft` references in
+  `src/App.tsx`, `src/components/AARPane.tsx`, `src/hooks/useCase.ts`,
+  `src/hooks/usePipelineStream.ts`, `src/lib/api.ts`,
+  `src/lib/demo.ts`. These are scheduled for Step 4 of the update —
+  the schemas file itself compiles cleanly in isolation, so the
+  remaining errors are purely consumer-side.
+
+**Outstanding work (tracked here, fixed in Steps 2-4 of this update):**
+
+- Pipeline references — `backend/app/pipeline/drafting.py`,
+  `pipeline/orchestrator.py`, `pipeline/_fixture.py`,
+  `app/case_loader.py`, `app/api/cases.py`, `app/api/pipeline.py`,
+  `backend/tests/test_case_cache.py`, `backend/tests/test_drafting.py`
+  all still import / construct `AARDraft` and load the old fixture.
+  Owned by Step 2 (pipeline) and Step 3 (API + cache rename).
+- Frontend consumers — `App.tsx`, `AARPane.tsx`, `useCase.ts`,
+  `usePipelineStream.ts`, `lib/api.ts`, `lib/demo.ts`,
+  `public/demo/sample_aar.json` (and the bundled-fallback path)
+  still use `AARDraft` and `/aar` endpoints. Owned by Step 4.
+- Documentation references to "AAR" remain in `README.md`,
+  `docs/PLAN.md`, `docs/ARCHITECTURE.md`, `CLAUDE.md`, and earlier
+  PROGRESS entries — they describe historical phases and do not
+  break anything; will be revisited as the rest of the rename
+  lands rather than churned in this step.
+
 ### Phase 6 — Polish & Demo Hardening (2026-04-25)
 
 Polish-only phase. No schema or pipeline-contract changes.

@@ -1,4 +1,4 @@
-// Mirrors backend/app/schemas.py — keep in sync.
+// Mirrors backend/app/schemas.py — keep in sync. Updated to QICaseReview structure.
 
 export type EventSource = "pcr" | "video" | "audio";
 
@@ -81,16 +81,122 @@ export interface Finding {
   suggested_review_action: string;
 }
 
-export interface AARDraft {
+export type CrewRole =
+  | "primary_paramedic"
+  | "secondary_paramedic"
+  | "emt"
+  | "driver"
+  | "supervisor"
+  | "other";
+
+export interface CrewMember {
+  role: CrewRole;
+  identifier: string;
+}
+
+export type ClinicalAssessmentCategory =
+  | "scene_management"
+  | "initial_assessment"
+  | "cpr_quality"
+  | "airway_management"
+  | "vascular_access"
+  | "medications"
+  | "defibrillation"
+  | "monitoring"
+  | "transport_decision"
+  | "handoff";
+
+export type AssessmentStatus =
+  | "met"
+  | "not_met"
+  | "not_applicable"
+  | "insufficient_documentation";
+
+export interface ClinicalAssessmentItem {
+  item_id: string;
+  category: ClinicalAssessmentCategory;
+  benchmark: string;
+  status: AssessmentStatus;
+  notes: string;
+  evidence_event_ids: string[];
+}
+
+export interface DocumentationQualityAssessment {
+  completeness_score: number;
+  accuracy_score: number;
+  narrative_quality_score: number;
+  issues: string[];
+}
+
+export type UtsteinInitialRhythm = "vf" | "vt" | "pea" | "asystole" | "unknown";
+
+export type UtsteinDisposition =
+  | "rosc_sustained"
+  | "transport_with_cpr"
+  | "pronounced_on_scene"
+  | "transferred_with_rosc";
+
+export interface UtsteinData {
+  witnessed: boolean | null;
+  bystander_cpr: boolean | null;
+  initial_rhythm: UtsteinInitialRhythm | null;
+  time_to_cpr_seconds: number | null;
+  time_to_first_defib_seconds: number | null;
+  rosc_achieved: boolean | null;
+  time_to_rosc_seconds: number | null;
+  disposition: UtsteinDisposition | null;
+}
+
+export type RecommendationAudience = "crew" | "agency" | "follow_up";
+
+export type RecommendationPriority = "informational" | "suggested" | "required";
+
+export interface Recommendation {
+  recommendation_id: string;
+  audience: RecommendationAudience;
+  priority: RecommendationPriority;
+  description: string;
+  related_finding_ids: string[];
+}
+
+export type ReviewerDetermination =
+  | "no_issues"
+  | "documentation_concern"
+  | "performance_concern"
+  | "significant_concern"
+  | "critical_event";
+
+export type PatientSex = "m" | "f" | "unknown";
+
+export interface QICaseReview {
   case_id: string;
   generated_at: string;
-  summary: string;
+  reviewer_id: string;
+
+  incident_date: string;
+  incident_type: string;
+  responding_unit: string;
+  crew_members: CrewMember[];
+  patient_age_range: string;
+  patient_sex: PatientSex;
+  chief_complaint: string;
+
+  incident_summary: string;
   timeline: TimelineEntry[];
+  clinical_assessment: ClinicalAssessmentItem[];
+  documentation_quality: DocumentationQualityAssessment;
   findings: Finding[];
   protocol_checks: ProtocolCheck[];
   adherence_score: number;
-  narrative: string;
+
+  utstein_data: UtsteinData | null;
+
+  recommendations: Recommendation[];
+  determination: ReviewerDetermination;
+  determination_rationale: string;
+
   reviewer_notes: string;
+  human_reviewed: boolean;
 }
 
 export interface Case {

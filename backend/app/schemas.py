@@ -97,16 +97,139 @@ class Finding(BaseModel):
     suggested_review_action: str
 
 
-class AARDraft(BaseModel):
+class CrewMember(BaseModel):
+    role: Literal[
+        "primary_paramedic",
+        "secondary_paramedic",
+        "emt",
+        "driver",
+        "supervisor",
+        "other",
+    ]
+    identifier: str
+
+
+class ClinicalAssessmentCategory(str, Enum):
+    SCENE_MANAGEMENT = "scene_management"
+    INITIAL_ASSESSMENT = "initial_assessment"
+    CPR_QUALITY = "cpr_quality"
+    AIRWAY_MANAGEMENT = "airway_management"
+    VASCULAR_ACCESS = "vascular_access"
+    MEDICATIONS = "medications"
+    DEFIBRILLATION = "defibrillation"
+    MONITORING = "monitoring"
+    TRANSPORT_DECISION = "transport_decision"
+    HANDOFF = "handoff"
+
+
+class AssessmentStatus(str, Enum):
+    MET = "met"
+    NOT_MET = "not_met"
+    NOT_APPLICABLE = "not_applicable"
+    INSUFFICIENT_DOCUMENTATION = "insufficient_documentation"
+
+
+class ClinicalAssessmentItem(BaseModel):
+    item_id: str
+    category: ClinicalAssessmentCategory
+    benchmark: str
+    status: AssessmentStatus
+    notes: str
+    evidence_event_ids: list[str] = Field(default_factory=list)
+
+
+class DocumentationQualityAssessment(BaseModel):
+    completeness_score: float
+    accuracy_score: float
+    narrative_quality_score: float
+    issues: list[str] = Field(default_factory=list)
+
+
+class UtsteinData(BaseModel):
+    """Cardiac-arrest-specific data per the 2024 Utstein registry template.
+
+    All fields optional — only present for cardiac arrest cases.
+    """
+
+    witnessed: Optional[bool] = None
+    bystander_cpr: Optional[bool] = None
+    initial_rhythm: Optional[Literal["vf", "vt", "pea", "asystole", "unknown"]] = None
+    time_to_cpr_seconds: Optional[float] = None
+    time_to_first_defib_seconds: Optional[float] = None
+    rosc_achieved: Optional[bool] = None
+    time_to_rosc_seconds: Optional[float] = None
+    disposition: Optional[
+        Literal[
+            "rosc_sustained",
+            "transport_with_cpr",
+            "pronounced_on_scene",
+            "transferred_with_rosc",
+        ]
+    ] = None
+
+
+class RecommendationAudience(str, Enum):
+    CREW = "crew"
+    AGENCY = "agency"
+    FOLLOW_UP = "follow_up"
+
+
+class RecommendationPriority(str, Enum):
+    INFORMATIONAL = "informational"
+    SUGGESTED = "suggested"
+    REQUIRED = "required"
+
+
+class Recommendation(BaseModel):
+    recommendation_id: str
+    audience: RecommendationAudience
+    priority: RecommendationPriority
+    description: str
+    related_finding_ids: list[str] = Field(default_factory=list)
+
+
+class ReviewerDetermination(str, Enum):
+    NO_ISSUES = "no_issues"
+    DOCUMENTATION_CONCERN = "documentation_concern"
+    PERFORMANCE_CONCERN = "performance_concern"
+    SIGNIFICANT_CONCERN = "significant_concern"
+    CRITICAL_EVENT = "critical_event"
+
+
+class QICaseReview(BaseModel):
     case_id: str
     generated_at: datetime
-    summary: str
+    reviewer_id: str = "sentinel_agent_v1"
+
+    # Header
+    incident_date: datetime
+    incident_type: str
+    responding_unit: str
+    crew_members: list[CrewMember] = Field(default_factory=list)
+    patient_age_range: str
+    patient_sex: Literal["m", "f", "unknown"]
+    chief_complaint: str
+
+    # Body
+    incident_summary: str
     timeline: list[TimelineEntry]
+    clinical_assessment: list[ClinicalAssessmentItem]
+    documentation_quality: DocumentationQualityAssessment
     findings: list[Finding]
     protocol_checks: list[ProtocolCheck]
     adherence_score: float
-    narrative: str
+
+    # Cardiac-arrest-specific (optional)
+    utstein_data: Optional[UtsteinData] = None
+
+    # Closing
+    recommendations: list[Recommendation]
+    determination: ReviewerDetermination
+    determination_rationale: str
+
+    # Human review state
     reviewer_notes: str = ""
+    human_reviewed: bool = False
 
 
 class Case(BaseModel):
