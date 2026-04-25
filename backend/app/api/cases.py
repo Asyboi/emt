@@ -15,7 +15,7 @@ from app.case_loader import (
     load_pcr_content,
 )
 from app.config import settings
-from app.schemas import AARDraft, Case
+from app.schemas import Case, QICaseReview
 
 router = APIRouter(tags=["cases"])
 
@@ -42,12 +42,12 @@ async def get_pcr(case_id: str) -> dict[str, str]:
     return {"content": content}
 
 
-@router.get("/cases/{case_id}/aar", response_model=AARDraft)
-async def get_aar(case_id: str) -> AARDraft:
-    aar = load_cached_aar(case_id)
-    if aar is None:
-        raise HTTPException(status_code=404, detail=f"No cached AAR for {case_id}")
-    return aar
+@router.get("/cases/{case_id}/aar", response_model=QICaseReview)
+async def get_aar(case_id: str) -> QICaseReview:
+    review = load_cached_aar(case_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail=f"No cached review for {case_id}")
+    return review
 
 
 @router.delete("/cases/{case_id}/aar", status_code=204)

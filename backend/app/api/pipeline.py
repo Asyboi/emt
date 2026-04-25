@@ -14,13 +14,13 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.case_loader import load_case, load_cached_aar, save_cached_aar
 from app.pipeline.orchestrator import process_case
-from app.schemas import AARDraft, PipelineProgress, PipelineStage
+from app.schemas import PipelineProgress, PipelineStage, QICaseReview
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["pipeline"])
 
-_jobs: dict[str, asyncio.Task[AARDraft]] = {}
+_jobs: dict[str, asyncio.Task[QICaseReview]] = {}
 
 _DONE = object()
 
@@ -54,12 +54,12 @@ async def trigger_process(case_id: str) -> dict[str, str]:
 
 
 async def _demo_stream(case_id: str) -> AsyncIterator[dict]:
-    """Replay a synthetic pipeline using the cached AAR.
+    """Replay a synthetic pipeline using the cached QI Case Review.
 
     Demo-mode short-circuit: emit running/complete progress events for each
-    stage with small delays for visual effect, then deliver the cached AAR.
-    Used when the backend can't run the live pipeline (no API keys, flaky
-    network) but we still want the streaming UI to look real.
+    stage with small delays for visual effect, then deliver the cached
+    review. Used when the backend can't run the live pipeline (no API keys,
+    flaky network) but we still want the streaming UI to look real.
     """
 
     cached = load_cached_aar(case_id)
@@ -69,7 +69,7 @@ async def _demo_stream(case_id: str) -> AsyncIterator[dict]:
             "data": json.dumps(
                 {
                     "type": "error",
-                    "message": f"No cached AAR available for {case_id}",
+                    "message": f"No cached review available for {case_id}",
                 }
             ),
         }
@@ -124,12 +124,12 @@ async def stream_pipeline(
 
     async def runner() -> None:
         try:
-            aar = await process_case(case, push_progress)
+            review = await process_case(case, push_progress)
             try:
-                save_cached_aar(case_id, aar)
+                save_cached_aar(case_id, review)
             except Exception as cache_exc:  # noqa: BLE001
-                logger.warning("Failed to cache AAR for %s: %s", case_id, cache_exc)
-            await queue.put({"type": "complete", "aar": aar.model_dump(mode="json")})
+                logger.warning("Failed to cache review for %s: %s", case_id, cache_exc)
+            await queue.put({"type": "complete", "aar": review.model_dump(mode="json")})
         except Exception as exc:  # noqa: BLE001
             await queue.put({"type": "error", "message": str(exc)})
         finally:

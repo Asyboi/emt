@@ -6,6 +6,13 @@ missing_documentation, phantom_intervention, protocol_deviation,
 care_gap). Findings carry evidence_event_ids that map back to real
 Event ids in the timeline so the frontend can deep-link to the moment
 in the video / PCR.
+
+TODO (QI Case Review follow-up): once the drafting stage's clinical
+assessment is real-LLM-driven, surface ClinicalAssessmentItem failures
+(status == NOT_MET) here as additional Findings (category =
+PROTOCOL_DEVIATION or CARE_GAP, severity proportional to the benchmark
+that was missed). Cross-stage integration is deferred until both
+stages run live so the dedup logic has real inputs to reason about.
 """
 
 from __future__ import annotations

@@ -1,9 +1,11 @@
 """Top-level pipeline orchestrator.
 
-Runs the seven Phase 2 stub stages in the correct order — Stage 1a/1b/1c
-in parallel via asyncio.gather, then stages 2-5 sequentially — emitting
-a PipelineProgress event for each `running` and `complete` transition so
-the SSE stream and CLI can render live progress.
+Runs the seven pipeline stages — 1a/1b/1c (PCR / video / audio) in
+parallel via asyncio.gather, then 2-5 sequentially — emitting a
+PipelineProgress event for each `running` and `complete` transition so
+the SSE stream and CLI can render live progress. The drafting stage
+now produces a `QICaseReview` (per Step 2 of the QI Case Review
+update); the previous `AARDraft` shape is retired.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
+from app.case_loader import load_pcr_content
 from app.pipeline import (
     audio_analyzer,
     drafting,
@@ -22,10 +25,10 @@ from app.pipeline import (
     video_analyzer,
 )
 from app.schemas import (
-    AARDraft,
     Case,
     PipelineProgress,
     PipelineStage,
+    QICaseReview,
 )
 
 ProgressCallback = Callable[[PipelineProgress], Awaitable[None]]
@@ -66,7 +69,7 @@ async def _run_stage(
     return result
 
 
-async def process_case(case: Case, progress_callback: ProgressCallback) -> AARDraft:
+async def process_case(case: Case, progress_callback: ProgressCallback) -> QICaseReview:
     pcr_task = _run_stage(
         PipelineStage.PCR_PARSING,
         lambda: pcr_parser.parse_pcr(case),
@@ -99,9 +102,11 @@ async def process_case(case: Case, progress_callback: ProgressCallback) -> AARDr
         lambda: findings_stage.generate_findings(timeline, checks),
         progress_callback,
     )
-    aar = await _run_stage(
+
+    pcr_content = load_pcr_content(case.case_id)
+    review = await _run_stage(
         PipelineStage.DRAFTING,
-        lambda: drafting.draft_aar(case, timeline, found, checks),
+        lambda: drafting.draft_qi_review(case, timeline, found, checks, pcr_content),
         progress_callback,
     )
-    return aar
+    return review

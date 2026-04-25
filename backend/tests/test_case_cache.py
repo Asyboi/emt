@@ -1,4 +1,9 @@
-"""Phase 6: AAR caching + clear endpoints."""
+"""Cache + clear endpoints (formerly Phase 6 AAR caching).
+
+Step 2 of the QI Case Review update swaps AARDraft → QICaseReview but
+keeps the on-disk filename and HTTP path (/aar) stable; Step 3 of the
+same update will rename them to /review and review.json.
+"""
 
 from __future__ import annotations
 
@@ -12,10 +17,10 @@ from fastapi.testclient import TestClient
 from app import case_loader
 from app.config import settings
 from app.main import app
-from app.schemas import AARDraft
+from app.schemas import QICaseReview
 
 
-FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "sample_aar.json"
+FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "sample_qi_review.json"
 
 
 @pytest.fixture
@@ -27,31 +32,33 @@ def isolated_cases(tmp_path, monkeypatch):
     return tmp_path, case_dir
 
 
-def _sample_aar() -> AARDraft:
+def _sample_review() -> QICaseReview:
     raw = json.loads(FIXTURE.read_text())
     raw["case_id"] = "case_test"
-    aar = AARDraft.model_validate(raw)
-    aar.generated_at = datetime.now(timezone.utc)
-    return aar
+    review = QICaseReview.model_validate(raw)
+    review.generated_at = datetime.now(timezone.utc)
+    return review
 
 
-def test_save_and_load_cached_aar_roundtrip(isolated_cases) -> None:
+def test_save_and_load_cached_review_roundtrip(isolated_cases) -> None:
     _, case_dir = isolated_cases
-    aar = _sample_aar()
+    review = _sample_review()
 
-    case_loader.save_cached_aar("case_test", aar)
+    case_loader.save_cached_aar("case_test", review)
     written = case_dir / "aar.json"
     assert written.exists()
 
     loaded = case_loader.load_cached_aar("case_test")
     assert loaded is not None
     assert loaded.case_id == "case_test"
-    assert len(loaded.findings) == len(aar.findings)
+    assert len(loaded.findings) == len(review.findings)
+    assert len(loaded.clinical_assessment) == len(review.clinical_assessment)
+    assert loaded.determination == review.determination
 
 
-def test_clear_cached_aar_removes_file(isolated_cases) -> None:
+def test_clear_cached_review_removes_file(isolated_cases) -> None:
     _, case_dir = isolated_cases
-    case_loader.save_cached_aar("case_test", _sample_aar())
+    case_loader.save_cached_aar("case_test", _sample_review())
     assert (case_dir / "aar.json").exists()
 
     removed = case_loader.clear_cached_aar("case_test")
@@ -62,13 +69,13 @@ def test_clear_cached_aar_removes_file(isolated_cases) -> None:
     assert case_loader.clear_cached_aar("case_test") is False
 
 
-def test_clear_cached_aar_404_when_case_missing(isolated_cases) -> None:
+def test_clear_cached_review_404_when_case_missing(isolated_cases) -> None:
     with pytest.raises(FileNotFoundError):
         case_loader.clear_cached_aar("case_does_not_exist")
 
 
-def test_delete_aar_endpoint(isolated_cases) -> None:
-    case_loader.save_cached_aar("case_test", _sample_aar())
+def test_delete_review_endpoint(isolated_cases) -> None:
+    case_loader.save_cached_aar("case_test", _sample_review())
     client = TestClient(app)
 
     res = client.delete("/api/cases/case_test/aar")
@@ -78,8 +85,8 @@ def test_delete_aar_endpoint(isolated_cases) -> None:
     assert res2.status_code == 404
 
 
-def test_demo_stream_replays_cached_aar(isolated_cases) -> None:
-    case_loader.save_cached_aar("case_test", _sample_aar())
+def test_demo_stream_replays_cached_review(isolated_cases) -> None:
+    case_loader.save_cached_aar("case_test", _sample_review())
     client = TestClient(app)
 
     with client.stream("GET", "/api/cases/case_test/stream?demo=1") as res:

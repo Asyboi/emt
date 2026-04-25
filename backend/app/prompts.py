@@ -2,14 +2,25 @@
 
 Phase 4 introduces the PCR parser prompt + tool. Phase 5 adds prompts
 for reconciliation, findings, drafting, audio event extraction, and
-video event extraction.
+video event extraction. The QI Case Review update (Step 2) adds the
+five drafting sub-call prompts and tools (header/summary, clinical
+assessment, documentation quality, recommendations, determination
+rationale).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.schemas import EventType, FindingCategory, FindingSeverity
+from app.schemas import (
+    AssessmentStatus,
+    ClinicalAssessmentCategory,
+    EventType,
+    FindingCategory,
+    FindingSeverity,
+    RecommendationAudience,
+    RecommendationPriority,
+)
 
 PCR_PARSER_SYSTEM = """You are an expert EMS quality assurance analyst extracting structured events from a Patient Care Report (PCR).
 
@@ -396,3 +407,347 @@ VIDEO_EVENTS_TOOL: dict[str, Any] = _events_tool(
     "extract_video_events",
     "Extract structured clinical events visible in body-cam footage",
 )
+
+
+# --------------------------------------------------------------------------- #
+# QI Case Review drafting — five sub-calls per qi_review_update_prompts.md.
+# --------------------------------------------------------------------------- #
+
+
+QI_HEADER_SYSTEM = """You are an EMS Quality Improvement reviewer extracting case header information and writing an incident summary from a Patient Care Report and a reconstructed multi-source timeline.
+
+Anonymize patient details — return age in 10-year ranges (e.g. "60-69"), use only m/f/unknown for sex, and omit names or addresses. Identify crew members by anonymized identifiers (P-001, P-002, ...) keyed by role; if the PCR uses real names or unit numbers, replace with anonymized identifiers in your output. The responding_unit field IS allowed to carry the unit number (e.g. "Medic 51") since that's not patient PII.
+
+Write the incident_summary as 2-3 short paragraphs of neutral clinical narrative — what happened, what was done, the disposition. Reference the patient as "the patient" and the crew as "the crew" or by role. Do not include findings or QA judgments in the summary; that's a separate section.
+
+If incident_type contains "cardiac_arrest" (or the PCR/timeline clearly indicates one), populate utstein_data with whatever the sources support; otherwise return utstein_data: null."""
+
+
+QI_HEADER_USER_TEMPLATE = """Extract the case header, write the incident summary, and (if applicable) populate the Utstein registry data.
+
+Incident type: {incident_type}
+Responding unit (from case metadata): {responding_unit}
+
+<pcr>
+{pcr_content}
+</pcr>
+
+<timeline>
+{timeline_json}
+</timeline>
+
+Use the extract_qi_header tool to return your structured output."""
+
+
+QI_HEADER_TOOL: dict[str, Any] = {
+    "name": "extract_qi_header",
+    "description": "Extract anonymized case header info, incident summary, and (when relevant) Utstein cardiac-arrest data",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "responding_unit": {
+                "type": "string",
+                "description": "Unit number / call sign (e.g. 'Medic 51').",
+            },
+            "crew_members": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "role": {
+                            "type": "string",
+                            "enum": [
+                                "primary_paramedic",
+                                "secondary_paramedic",
+                                "emt",
+                                "driver",
+                                "supervisor",
+                                "other",
+                            ],
+                        },
+                        "identifier": {
+                            "type": "string",
+                            "description": "Anonymized identifier such as 'P-001'.",
+                        },
+                    },
+                    "required": ["role", "identifier"],
+                },
+            },
+            "patient_age_range": {
+                "type": "string",
+                "description": "10-year age band (e.g. '60-69'). Use 'unknown' if not documented.",
+            },
+            "patient_sex": {
+                "type": "string",
+                "enum": ["m", "f", "unknown"],
+            },
+            "chief_complaint": {"type": "string"},
+            "incident_summary": {
+                "type": "string",
+                "description": "2-3 paragraph neutral clinical narrative.",
+            },
+            "utstein_data": {
+                "type": ["object", "null"],
+                "description": "Cardiac-arrest registry fields. Set to null for non-arrest cases.",
+                "properties": {
+                    "witnessed": {"type": ["boolean", "null"]},
+                    "bystander_cpr": {"type": ["boolean", "null"]},
+                    "initial_rhythm": {
+                        "type": ["string", "null"],
+                        "enum": ["vf", "vt", "pea", "asystole", "unknown", None],
+                    },
+                    "time_to_cpr_seconds": {"type": ["number", "null"]},
+                    "time_to_first_defib_seconds": {"type": ["number", "null"]},
+                    "rosc_achieved": {"type": ["boolean", "null"]},
+                    "time_to_rosc_seconds": {"type": ["number", "null"]},
+                    "disposition": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "rosc_sustained",
+                            "transport_with_cpr",
+                            "pronounced_on_scene",
+                            "transferred_with_rosc",
+                            None,
+                        ],
+                    },
+                },
+            },
+        },
+        "required": [
+            "responding_unit",
+            "crew_members",
+            "patient_age_range",
+            "patient_sex",
+            "chief_complaint",
+            "incident_summary",
+        ],
+    },
+}
+
+
+QI_CLINICAL_ASSESSMENT_SYSTEM = """You are an EMS QI reviewer evaluating clinical care against established benchmarks. For each benchmark below, assess whether the timeline shows the standard was MET, NOT_MET, NOT_APPLICABLE, or has INSUFFICIENT_DOCUMENTATION.
+
+Cardiac arrest benchmarks (when incident_type=cardiac_arrest):
+- Scene management: arrival to patient contact <60s
+- Initial assessment: rhythm identified within 30s of patient contact
+- CPR quality: chest compressions started within 10s of arrest confirmation (bystander CPR continued is acceptable)
+- CPR quality: minimal interruptions, peri-shock pause <10s
+- Airway management: BVM ventilation initiated, advanced airway considered after initial CPR cycles
+- Vascular access: IV/IO established within first 5 minutes
+- Medications: epinephrine 1mg IV/IO every 3-5 minutes
+- Defibrillation: VF/pulseless VT shocked within 2 minutes of identification
+- Monitoring: continuous ECG, EtCO2 once advanced airway is in place
+- Transport decision: appropriate destination + timing
+- Handoff: structured handoff to receiving hospital with rhythm history, drug timing, ROSC time
+
+For non-arrest incident types, generalize: scene management, initial assessment, and handoff items always apply; the others are NOT_APPLICABLE unless the timeline shows them.
+
+Rules:
+- Cite specific timeline event_ids in evidence_event_ids when an event in the timeline supports the assessment.
+- notes: 1-2 sentences referencing the actual timeline events (timestamps welcome).
+- item_id: short, lowercased, hyphen-or-underscore (e.g. 'ca_scene_arrival'). Must be unique across the response.
+- Emit at least one item per relevant category. Do not invent benchmarks beyond the list above.
+"""
+
+
+QI_CLINICAL_ASSESSMENT_USER_TEMPLATE = """Evaluate clinical performance for this case.
+
+Incident type: {incident_type}
+
+<timeline>
+{timeline_json}
+</timeline>
+
+Use the assess_clinical_care tool to return your structured output."""
+
+
+QI_CLINICAL_ASSESSMENT_TOOL: dict[str, Any] = {
+    "name": "assess_clinical_care",
+    "description": "Evaluate the timeline against per-category clinical benchmarks for the incident type",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "item_id": {"type": "string"},
+                        "category": {
+                            "type": "string",
+                            "enum": [c.value for c in ClinicalAssessmentCategory],
+                        },
+                        "benchmark": {"type": "string"},
+                        "status": {
+                            "type": "string",
+                            "enum": [s.value for s in AssessmentStatus],
+                        },
+                        "notes": {"type": "string"},
+                        "evidence_event_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "event_id values from the timeline's source_events that ground the assessment",
+                        },
+                    },
+                    "required": [
+                        "item_id",
+                        "category",
+                        "benchmark",
+                        "status",
+                        "notes",
+                    ],
+                },
+            },
+        },
+        "required": ["items"],
+    },
+}
+
+
+QI_DOCUMENTATION_QUALITY_SYSTEM = """You evaluate Patient Care Report documentation quality against the actual events captured in video and audio sources (visible in the timeline as source-tagged events).
+
+Score each dimension on a 0.0-1.0 scale:
+- completeness_score: fraction of clinically relevant timeline events that are documented in the PCR. 1.0 = every multi-source or video/audio event is also in the PCR.
+- accuracy_score: where the PCR overlaps with other sources, do they agree on facts (timestamps, doses, interventions)? 1.0 = no discrepancies. Lower for each conflicting fact.
+- narrative_quality_score: is the PCR narrative coherent, professional, and complete? 0.5 = readable but missing details; 1.0 = exemplary.
+
+List specific, evidence-grounded issues. Each issue should reference a concrete event or section of the PCR (no abstract complaints)."""
+
+
+QI_DOCUMENTATION_QUALITY_USER_TEMPLATE = """Evaluate documentation quality for this case.
+
+<pcr>
+{pcr_content}
+</pcr>
+
+<timeline>
+{timeline_json}
+</timeline>
+
+Use the assess_documentation_quality tool to return your structured output."""
+
+
+QI_DOCUMENTATION_QUALITY_TOOL: dict[str, Any] = {
+    "name": "assess_documentation_quality",
+    "description": "Score PCR completeness, accuracy, and narrative quality against the multi-source timeline",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "completeness_score": {
+                "type": "number",
+                "description": "0.0-1.0 — fraction of timeline events also documented in the PCR.",
+            },
+            "accuracy_score": {
+                "type": "number",
+                "description": "0.0-1.0 — agreement between PCR and other sources on overlapping events.",
+            },
+            "narrative_quality_score": {
+                "type": "number",
+                "description": "0.0-1.0 — coherence, professionalism, completeness of narrative.",
+            },
+            "issues": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific, evidence-grounded documentation issues.",
+            },
+        },
+        "required": [
+            "completeness_score",
+            "accuracy_score",
+            "narrative_quality_score",
+            "issues",
+        ],
+    },
+}
+
+
+QI_RECOMMENDATIONS_SYSTEM = """Based on the findings and clinical assessment results, generate actionable recommendations.
+
+Categorize each recommendation by audience:
+- crew: feedback for the responding providers (technique, charting habits, training).
+- agency: systemic issues (equipment, protocol changes, training programs, template updates).
+- follow_up: additional review needed, escalation, peer discussion.
+
+Priority ladder:
+- required: must be addressed before the chart is signed off (e.g. correct documentation errors that affect QA / billing / handoff).
+- suggested: should be addressed in the next training cycle.
+- informational: no action required, awareness only.
+
+Use a non-punitive, learning-oriented tone consistent with Just Culture principles. Cite the related finding_ids in related_finding_ids; recommendations may also stand alone (empty list) if motivated by clinical_assessment items without a corresponding finding.
+
+Distribution target: 1-2 crew, 1 agency, 0-1 follow_up. Adjust if the case clearly demands more or less."""
+
+
+QI_RECOMMENDATIONS_USER_TEMPLATE = """Generate recommendations for this case.
+
+<findings>
+{findings_json}
+</findings>
+
+<clinical_assessment>
+{clinical_assessment_json}
+</clinical_assessment>
+
+Use the generate_recommendations tool to return your structured output."""
+
+
+QI_RECOMMENDATIONS_TOOL: dict[str, Any] = {
+    "name": "generate_recommendations",
+    "description": "Generate categorized, prioritized recommendations for the case",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "recommendations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "recommendation_id": {"type": "string"},
+                        "audience": {
+                            "type": "string",
+                            "enum": [a.value for a in RecommendationAudience],
+                        },
+                        "priority": {
+                            "type": "string",
+                            "enum": [p.value for p in RecommendationPriority],
+                        },
+                        "description": {"type": "string"},
+                        "related_finding_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": [
+                        "recommendation_id",
+                        "audience",
+                        "priority",
+                        "description",
+                    ],
+                },
+            },
+        },
+        "required": ["recommendations"],
+    },
+}
+
+
+QI_DETERMINATION_RATIONALE_SYSTEM = """Given a determination classification (no_issues / documentation_concern / performance_concern / significant_concern / critical_event), write a 2-3 sentence rationale that cites the specific findings (by title) and clinical_assessment items (by benchmark) supporting the determination.
+
+Neutral clinical tone. No preamble. Do not propose actions or recommendations — those are a separate section."""
+
+
+QI_DETERMINATION_RATIONALE_USER_TEMPLATE = """Determination: {determination}
+
+Findings (count by severity): {finding_counts}
+Not-met clinical assessments: {not_met_count}
+Documentation issues: {doc_issue_count}
+
+<findings>
+{findings_json}
+</findings>
+
+<clinical_assessment_failures>
+{not_met_json}
+</clinical_assessment_failures>
+
+Return ONLY the rationale prose (2-3 sentences). No preamble, no headings."""

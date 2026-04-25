@@ -1,9 +1,9 @@
-"""Shared fixture loader for Phase 2 pipeline stubs.
+"""Shared fixture loader for pipeline stubs and drafting fallbacks.
 
-Every stage in this phase returns a slice of the canonical sample AAR.
-Loading the fixture once at module import keeps the stub work cheap and
-guarantees that every stub returns schema-valid data the frontend can
-render against.
+Loads the canonical QI Case Review sample once at import (lru_cache), and
+exposes per-source event slicers (still used by the protocol_check stub)
+plus QI-specific accessors that the new drafting stage uses as a
+fallback when an LLM sub-call fails.
 """
 
 from __future__ import annotations
@@ -12,24 +12,49 @@ import json
 from functools import lru_cache
 
 from app.config import settings
-from app.schemas import AARDraft, Event, EventSource
+from app.schemas import (
+    ClinicalAssessmentItem,
+    DocumentationQualityAssessment,
+    Event,
+    EventSource,
+    QICaseReview,
+    Recommendation,
+    UtsteinData,
+)
 
 
 @lru_cache(maxsize=1)
-def _aar() -> AARDraft:
-    fixture = (settings.FIXTURES_DIR.resolve() / "sample_aar.json")
+def _review() -> QICaseReview:
+    fixture = settings.FIXTURES_DIR.resolve() / "sample_qi_review.json"
     data = json.loads(fixture.read_text(encoding="utf-8"))
-    return AARDraft.model_validate(data)
+    return QICaseReview.model_validate(data)
 
 
-def fixture_aar() -> AARDraft:
-    return _aar().model_copy(deep=True)
+def fixture_qi_review() -> QICaseReview:
+    return _review().model_copy(deep=True)
+
+
+def fixture_clinical_assessment() -> list[ClinicalAssessmentItem]:
+    return [item.model_copy(deep=True) for item in _review().clinical_assessment]
+
+
+def fixture_documentation_quality() -> DocumentationQualityAssessment:
+    return _review().documentation_quality.model_copy(deep=True)
+
+
+def fixture_utstein_data() -> UtsteinData | None:
+    utstein = _review().utstein_data
+    return utstein.model_copy(deep=True) if utstein is not None else None
+
+
+def fixture_recommendations() -> list[Recommendation]:
+    return [rec.model_copy(deep=True) for rec in _review().recommendations]
 
 
 def _events_by_source(source: EventSource) -> list[Event]:
-    aar = _aar()
+    review = _review()
     seen: dict[str, Event] = {}
-    for entry in aar.timeline:
+    for entry in review.timeline:
         for event in entry.source_events:
             if event.source == source and event.event_id not in seen:
                 seen[event.event_id] = event

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.config import settings
-from app.schemas import AARDraft, Case
+from app.schemas import Case, QICaseReview
 
 PCR_PLACEHOLDER = """# Patient Care Report — placeholder
 
@@ -34,16 +34,21 @@ def _case_dir(case_id: str) -> Path:
 
 
 def _seed_case_01() -> None:
-    """One-time seed: copy the canonical sample AAR into cases/case_01/aar.json
-    so GET /api/cases/case_01/aar returns realistic data even before the
-    pipeline has been run."""
+    """One-time seed: copy the canonical sample QI Case Review into
+    cases/case_01/aar.json so GET /api/cases/case_01/aar returns realistic
+    data before the pipeline has been run.
+
+    Step 3 of the QI Case Review update will rename the on-disk file
+    from aar.json to review.json with a one-time migration; until then
+    the filename stays put to keep the existing cache + tests working.
+    """
     case_dir = _case_dir("case_01")
     if not case_dir.exists():
         return
     target = case_dir / "aar.json"
     if target.exists():
         return
-    fixture = _fixtures_root() / "sample_aar.json"
+    fixture = _fixtures_root() / "sample_qi_review.json"
     if fixture.exists():
         shutil.copy(fixture, target)
 
@@ -101,7 +106,7 @@ def load_pcr_content(case_id: str) -> str:
     return pcr_path.read_text(encoding="utf-8")
 
 
-def load_cached_aar(case_id: str) -> AARDraft | None:
+def load_cached_aar(case_id: str) -> QICaseReview | None:
     case_dir = _case_dir(case_id)
     if case_id == "case_01":
         _seed_case_01()
@@ -109,15 +114,15 @@ def load_cached_aar(case_id: str) -> AARDraft | None:
     if not aar_path.exists():
         return None
     data = json.loads(aar_path.read_text(encoding="utf-8"))
-    return AARDraft.model_validate(data)
+    return QICaseReview.model_validate(data)
 
 
-def save_cached_aar(case_id: str, aar: AARDraft) -> Path:
+def save_cached_aar(case_id: str, review: QICaseReview) -> Path:
     case_dir = _case_dir(case_id)
     if not case_dir.is_dir():
         raise FileNotFoundError(f"Case not found: {case_id}")
     aar_path = case_dir / "aar.json"
-    aar_path.write_text(aar.model_dump_json(indent=2), encoding="utf-8")
+    aar_path.write_text(review.model_dump_json(indent=2), encoding="utf-8")
     return aar_path
 
 

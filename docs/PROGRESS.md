@@ -5,6 +5,131 @@ after every meaningful change. Newest entries at the top of each section.
 
 ## Completed
 
+### QI Case Review Update — Step 2: Pipeline drafting → QICaseReview (2026-04-25)
+
+Pipeline now produces a `QICaseReview` end-to-end. Drafting is broken
+into five focused Sonnet sub-calls (header / clinical assessment /
+documentation quality / recommendations / determination rationale)
+plus a deterministic determination rule. Each sub-call has a
+fixture-derived fallback so the stage is robust against missing API
+keys, transient model errors, or upstream stub data — the orchestrator
+now always returns a valid `QICaseReview`.
+
+**Backend.**
+
+- `backend/app/prompts.py` — adds `QI_HEADER_*`,
+  `QI_CLINICAL_ASSESSMENT_*`, `QI_DOCUMENTATION_QUALITY_*`,
+  `QI_RECOMMENDATIONS_*`, and `QI_DETERMINATION_RATIONALE_*` (system
+  prompt + user template + tool schema for the four structured calls;
+  rationale is plain prose). Tool schemas pull their enums from the
+  Pydantic models so they cannot drift.
+- `backend/app/pipeline/drafting.py` — replaces `draft_aar` with
+  `draft_qi_review(case, timeline, findings, checks, pcr_content) ->
+  QICaseReview`. Public deterministic helpers exposed for testing:
+  `compute_adherence_score` (unchanged) and
+  `compute_determination(findings, clinical, doc_quality)`. Each
+  sub-call is wrapped in try/except → `_fixture_*` fallbacks; the
+  rationale call has a `_fallback_rationale` deterministic backup. All
+  fallbacks log a clear warning. Tool-output sanitation: clamps
+  doc-quality scores to [0,1], drops unknown evidence_event_ids,
+  dedupes clinical assessment item_ids.
+- `backend/app/pipeline/orchestrator.py` — `process_case` now returns
+  `QICaseReview`; the drafting stage call passes `pcr_content` (read
+  via `case_loader.load_pcr_content`).
+- `backend/app/pipeline/_fixture.py` — loads `sample_qi_review.json` as
+  `QICaseReview`. Adds `fixture_qi_review`,
+  `fixture_clinical_assessment`, `fixture_documentation_quality`,
+  `fixture_utstein_data`, `fixture_recommendations`. Per-source event
+  slicers (`pcr_events`, `video_events`, `audio_events`) now traverse
+  the QI review's timeline.
+- `backend/app/pipeline/protocol_check.py` — light update: pulls
+  fixture data from `fixture_qi_review` instead of the retired
+  `fixture_aar`. Stub behavior unchanged.
+- `backend/app/pipeline/findings.py` — TODO comment added describing
+  how clinical_assessment failures should fold back into findings once
+  both stages are real-LLM-driven; no functional change.
+- `backend/app/case_loader.py`, `backend/app/api/cases.py`,
+  `backend/app/api/pipeline.py` — minimum-viable type renames:
+  every `AARDraft` reference is now `QICaseReview`. Function names
+  (`load_cached_aar`, `save_cached_aar`, `clear_cached_aar`), file
+  path (`cases/{id}/aar.json`), endpoint paths (`/cases/{id}/aar`),
+  and SSE final-event key (`"aar"`) are intentionally **unchanged** —
+  Step 3 of this update owns those renames. Without these
+  type-only edits the backend would not import, blocking Step 2
+  acceptance criterion #1 (`pytest` passes).
+- `backend/scripts/run_pipeline.py` — argparse-based CLI; new
+  `--summary` flag prints determination + adherence + section counts +
+  incident_summary + determination_rationale instead of the full JSON
+  blob. Default behavior (full JSON) unchanged.
+
+**Tests.**
+
+- `backend/tests/test_drafting.py` — rewritten:
+  * `test_compute_adherence_score_ratio` (unchanged)
+  * 7 new `test_compute_determination_*` cases covering every branch
+    of the rule (critical → CRITICAL_EVENT; ≥2 concerns or ≥3 not_met
+    → SIGNIFICANT_CONCERN; 1 concern or 1-2 not_met →
+    PERFORMANCE_CONCERN; doc-only → DOCUMENTATION_CONCERN; clean →
+    NO_ISSUES)
+  * `test_draft_qi_review_falls_back_to_fixture_without_api_key` —
+    runs the full `draft_qi_review` against synthetic timeline /
+    findings / checks; with no API key the per-sub-call fallbacks
+    kick in and the output is still a valid `QICaseReview` with
+    populated clinical_assessment, documentation_quality,
+    recommendations, and utstein_data (fixture-derived because the
+    incident is cardiac_arrest). Determination falls in {
+    PERFORMANCE_CONCERN, SIGNIFICANT_CONCERN } given a 1-CONCERN
+    finding plus the fixture's NOT_MET items. Skipped if a key IS
+    set (so the same test slot doesn't double up with the live one).
+  * `test_draft_qi_review_with_real_sonnet` — gated on
+    `ANTHROPIC_API_KEY`; asserts ≥30 words of summary, ≥3 clinical
+    items, populated recommendations, non-empty rationale.
+- `backend/tests/test_case_cache.py` — fixture path
+  `sample_aar.json` → `sample_qi_review.json`, type
+  `AARDraft` → `QICaseReview`, function names renamed for clarity
+  (`*_review_*`). Endpoint paths (`/aar`) and on-disk filename
+  (`aar.json`) unchanged — Step 3 territory.
+
+**Verification — 2026-04-25:**
+
+- `cd backend && uv run ruff check app tests scripts` → all checks
+  passed.
+- `cd backend && uv run pytest -v` → **20 passed, 6 skipped**. Skipped
+  set unchanged (all LLM-key-gated end-to-end tests:
+  test_audio_analyzer e2e, test_findings, test_pcr_parser,
+  test_reconciliation, test_video_analyzer e2e, test_drafting Sonnet
+  e2e). Newly green: 8 determination/drafting tests, plus the
+  fixture-fallback smoke test that exercises `draft_qi_review`
+  end-to-end without any API call.
+- `cd backend && uv run python scripts/run_pipeline.py case_01` —
+  same pre-existing constraint as Phases 4-5: fails at the PCR parser
+  stage when `.env` has no `ANTHROPIC_API_KEY` because pcr_parser is
+  pure-LLM with no fallback path (out-of-scope to add one in this
+  step). The drafting stage's own end-to-end behavior is verified
+  via `test_draft_qi_review_falls_back_to_fixture_without_api_key`
+  which composes a valid QICaseReview with all required sections
+  (header, summary, timeline, clinical_assessment,
+  documentation_quality, findings, protocol_checks, utstein_data,
+  recommendations, determination, determination_rationale).
+- The `--summary` flag was exercised manually against the fallback
+  smoke test's QICaseReview shape.
+
+**Outstanding work (Steps 3-4):**
+
+- Step 3 (API): rename endpoint `/cases/{id}/aar` → `/cases/{id}/review`,
+  cache file `aar.json` → `review.json` with auto-migration, SSE final
+  event key `"aar"` → `"review"`, function names `load_cached_aar` →
+  `load_cached_review` (and siblings). Public docs/API.md to be
+  added/updated.
+- Step 4 (Frontend): rebuild `AARPane` as `ReviewPane` rendering all
+  10 sections (DeterminationBanner, CaseHeader, IncidentSummary,
+  UtsteinDataCard, FindingsList, ClinicalAssessmentSection,
+  DocumentationQualitySection, ProtocolChecksSection,
+  RecommendationsSection, ReviewerNotesField). Rename `getAAR` →
+  `getReview` and update SSE handler key. Existing click-to-seek
+  interaction must be preserved and extended to ClinicalAssessmentItem
+  evidence.
+
 ### QI Case Review Update — Step 1: Schema (2026-04-25)
 
 Renamed `AARDraft` → `QICaseReview` and extended the model to match how
