@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project: Sentinel
 
-Hackathon agentic system that turns Patient Care Reports (PCR), body-cam video, and dispatch audio into a reviewer-ready After-Action Report (AAR) — timeline reconciliation, protocol checks, discrepancy findings.
+Hackathon agentic system that turns Patient Care Reports (PCR), body-cam video, and dispatch audio into a reviewer-ready QI Case Review — timeline reconciliation, protocol checks, discrepancy findings, clinical assessment, and structured recommendations.
 
 The repo was built in **phases** defined by `sentinel_scaffolding_prompts.md` at the repo root. That file is the source of truth for what each phase added (and explicitly what NOT to touch). All six phases are now complete.
 
@@ -22,12 +22,12 @@ The phased split mirrored a three-developer division: **Data** (`cases/`, `proto
 
 Two deployable units that talk over HTTP:
 
-- **`backend/`** — FastAPI + Python 3.11+ async pipeline orchestrator. Self-hosted. Calls Anthropic (Claude Haiku 4.5 + Sonnet 4.6), Google (Gemini 2.5 Flash for video), and ElevenLabs (Scribe v1 for audio transcription) to process case media into structured events, reconcile timelines across sources, check protocols, and draft AARs. Auto-caches the resulting AAR to `cases/<id>/aar.json` after a successful live run.
-- **`frontend/`** — Vite + React 18 + TypeScript + Tailwind. Deploys to Cloudflare Pages. The Vite dev server proxies `/api/*` → `http://localhost:8000` (see `frontend/vite.config.ts`); in production the frontend hits `VITE_API_URL` directly. Demo mode (`?demo=1` URL or `VITE_DEMO_MODE=1` build env) replays a cached AAR and works fully offline using bundled fixtures in `frontend/public/demo/`.
+- **`backend/`** — FastAPI + Python 3.11+ async pipeline orchestrator (v0.3.0). Self-hosted. Calls Anthropic (Claude Haiku 4.5 + Sonnet 4.6), Google (Gemini 2.5 Flash for video), and ElevenLabs (Scribe v1 for audio transcription) to process case media into structured events, reconcile timelines across sources, check protocols, and produce a `QICaseReview`. Auto-caches the resulting review to `cases/<id>/review.json` after a successful live run. On startup, a `lifespan` handler runs `migrate_legacy_aar_caches()` to upgrade any old `aar.json` files.
+- **`frontend/`** — Vite + React 18 + TypeScript + Tailwind. Deploys to Cloudflare Pages. The Vite dev server proxies `/api/*` → `http://localhost:8000` (see `frontend/vite.config.ts`); in production the frontend hits `VITE_API_URL` directly. Demo mode (`?demo=1` URL or `VITE_DEMO_MODE=1` build env) replays a cached `QICaseReview` and works fully offline using bundled fixtures in `frontend/public/demo/`.
 
-Schema contract: `backend/app/schemas.py` (Pydantic v2) is the single source of truth. `frontend/src/types/schemas.ts` mirrors it exactly. `fixtures/sample_aar.json` is shared between backend stubs/seeding and the frontend demo fallback — both sides build against it.
+Schema contract: `backend/app/schemas.py` (Pydantic v2) is the single source of truth. `frontend/src/types/schemas.ts` mirrors it exactly. `fixtures/sample_aar.json` is shared between backend stubs/seeding and the frontend demo fallback — both sides build against it. The top-level output type is now `QICaseReview` (replacing the old `AARDraft`).
 
-Cases live in `cases/case_NN/` (PCR, video, audio, ground truth, cached AAR). Video, audio, and `aar.json` are gitignored (`cases/*/video.*`, `cases/*/audio.*`, `cases/*/aar.json`).
+Cases live in `cases/case_NN/` (PCR, video, audio, ground truth, cached review). Video, audio, and `review.json` are gitignored (`cases/*/video.*`, `cases/*/audio.*`, `cases/*/review.json`).
 
 ## Running locally
 
@@ -97,14 +97,14 @@ VITE_DEMO_MODE=1 npm run build
 | `GET` | `/api/cases` | List cases |
 | `GET` | `/api/cases/{id}` | Case metadata |
 | `GET` | `/api/cases/{id}/pcr` | `{ content }` markdown |
-| `GET` | `/api/cases/{id}/aar` | Cached `AARDraft`, 404 if absent |
-| `DELETE` | `/api/cases/{id}/aar` | Clear cache (Reset button) |
+| `GET` | `/api/cases/{id}/review` | Cached `QICaseReview`, 404 if absent |
+| `DELETE` | `/api/cases/{id}/review` | Clear cache (Reset button) |
 | `GET` | `/api/cases/{id}/video` | `FileResponse` with HTTP Range |
 | `POST` | `/api/cases/{id}/process` | Background job |
 | `GET` | `/api/cases/{id}/stream` | SSE pipeline stream (live) |
-| `GET` | `/api/cases/{id}/stream?demo=1` | SSE replay of cached AAR |
+| `GET` | `/api/cases/{id}/stream?demo=1` | SSE replay of cached `QICaseReview` |
 
-The SSE stream emits 14 `progress` events (running + complete per stage × 7 stages) and one final `complete` event carrying the AAR. The frontend in `usePipelineStream` keys on `(stage, status)` to drive the progress bar.
+The SSE stream emits 14 `progress` events (running + complete per stage × 7 stages) and one final `complete` event carrying the `QICaseReview`. The frontend in `usePipelineStream` keys on `(stage, status)` to drive the progress bar.
 
 ## Environment
 
