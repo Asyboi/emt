@@ -1,0 +1,25 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+
+# Env
+.env
+.env.local
+
+# Case media (kept out of git — large binaries)
+cases/*/video.*
+cases/*/audio.*
+
+# OS
+.DS_Store
+Thumbs.db

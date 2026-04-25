@@ -1,0 +1,4 @@
+# Cloudflare Pages redirects/rewrites.
+# Deploys from frontend/ root alongside the dist/ build output.
+# Add SPA fallback if/when client-side routing is introduced, e.g.:
+#   /*    /index.html   200
