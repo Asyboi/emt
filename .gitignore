@@ -20,6 +20,10 @@ dist/
 cases/*/video.*
 cases/*/audio.*
 
+# Cached pipeline output — regenerated on demand from fixtures/sample_qi_review.json
+cases/*/review.json
+cases/*/aar.json
+
 # OS
 .DS_Store
 Thumbs.db

@@ -5,6 +5,94 @@ after every meaningful change. Newest entries at the top of each section.
 
 ## Completed
 
+### QI Case Review Update — Step 3: API + cache renames (2026-04-25)
+
+API surface and on-disk cache aligned with the new schema. The
+endpoint that returns the cached pipeline output is now
+`/api/cases/{id}/review` (was `/aar`); the cache file is
+`cases/{id}/review.json` (was `aar.json`); the SSE final-event payload
+key is `"review"` (was `"aar"`); cache helpers are
+`load_cached_review` / `save_cached_review` / `clear_cached_review`.
+
+**Backend.**
+
+- `backend/app/case_loader.py` — function renames
+  (`load_cached_aar` → `load_cached_review`, etc.) and on-disk filename
+  switch (`aar.json` → `review.json`). Adds
+  `migrate_legacy_aar_caches()`: validates each `cases/*/aar.json`
+  against the current `QICaseReview` schema before renaming. Files
+  that don't validate (e.g. the pre-Step-1 `AARDraft`-shape committed
+  fixture in `cases/case_01/aar.json`) are deleted with a warning —
+  case_01 then re-seeds itself from `fixtures/sample_qi_review.json`
+  on the next read so demos continue to work end-to-end.
+  `_seed_case_01` now writes directly to `review.json`.
+- `backend/app/main.py` — adopts FastAPI's `lifespan` context manager
+  to call `migrate_legacy_aar_caches()` on startup. Version bumped to
+  0.3.0 to reflect the API rename.
+- `backend/app/api/cases.py` — routes `/cases/{id}/aar` →
+  `/cases/{id}/review` for both `GET` and `DELETE`. Endpoint handlers
+  renamed (`get_aar` → `get_review`, `delete_aar` → `delete_review`).
+- `backend/app/api/pipeline.py` — uses the renamed cache helpers, and
+  the SSE final-event payload now reads
+  `{"type": "complete", "review": <QICaseReview>}`. Demo-stream
+  branch updated identically so frontend handlers don't have to
+  branch on mode.
+- `.gitignore` — adds `cases/*/review.json` and (defensively)
+  `cases/*/aar.json`. The cache is regenerated from
+  `fixtures/sample_qi_review.json` on demand, so committing it just
+  duplicates the canonical source. The pre-update `cases/case_01/aar.json`
+  (committed when `AARDraft` was the schema) is removed from git.
+- `docs/API.md` (NEW) — full endpoint reference (every path, method,
+  request/response shape), SSE event format with the new `"review"`
+  payload key, example curl commands for live and `?demo=1`, caching +
+  migration semantics, CORS note.
+
+**Tests.**
+
+- `backend/tests/test_case_cache.py` — endpoint paths updated to
+  `/review`, helper calls and on-disk filename assertions updated to
+  `review.json`. Demo-stream test now also asserts the SSE payload
+  uses `"review":` and not `"aar":`. Three migration tests:
+  * `test_migration_renames_legacy_aar_to_review` — happy path with
+    two cases worth of valid legacy `aar.json` files.
+  * `test_migration_skips_when_review_already_present` — leaves a
+    legacy `aar.json` alone if a `review.json` already exists.
+  * `test_migration_discards_incompatible_legacy_aar` — covers the
+    pre-Step-1 case: a legacy `aar.json` whose content can't validate
+    as `QICaseReview` is deleted (no `review.json` is created).
+
+**Verification — 2026-04-25:**
+
+- `cd backend && uv run ruff check app tests scripts` → all checks
+  passed.
+- `cd backend && uv run pytest -v` → **23 passed, 6 skipped**. New:
+  3 migration tests in `test_case_cache.py`. Skipped set unchanged
+  (LLM-key-gated).
+- TestClient smoke (no API keys, demo mode):
+  * `GET /api/cases` → 3 cases (case_01, case_02, case_03)
+  * `GET /api/cases/case_01/review` → 200 with
+    determination=`performance_concern`, 4 findings, 10
+    clinical_assessment items
+  * `GET /api/cases/case_01/aar` → **404** (route gone)
+  * `GET /api/cases/case_01/stream?demo=1` → 14 progress + 1 complete;
+    final event payload key is `"review"`, never `"aar"`
+  * `DELETE /api/cases/case_01/review` → 204; subsequent GET returns
+    200 because `case_01` re-seeds itself (intentional, demo-friendly)
+- Local migration: `cases/case_01/aar.json` (the AARDraft-shape file
+  committed pre-Step-1) was discarded by the new validate-then-rename
+  logic on first startup; `cases/case_01/review.json` was lazily
+  re-seeded from `fixtures/sample_qi_review.json`. The end state is a
+  valid `QICaseReview` cache.
+
+**Outstanding work:**
+
+- Step 4 (Frontend) — remaining and last. `frontend/src/lib/api.ts`
+  still calls `/api/cases/{id}/aar` and reads the SSE `aar` key, so
+  the dev UI is currently broken against the renamed backend. The
+  bundled `frontend/public/demo/sample_aar.json` static fallback is
+  also still in old shape. All of this is the explicit scope of
+  Step 4.
+
 ### QI Case Review Update — Step 2: Pipeline drafting → QICaseReview (2026-04-25)
 
 Pipeline now produces a `QICaseReview` end-to-end. Drafting is broken

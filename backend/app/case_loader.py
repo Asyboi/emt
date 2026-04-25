@@ -1,10 +1,13 @@
 import json
+import logging
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from app.config import settings
 from app.schemas import Case, QICaseReview
+
+logger = logging.getLogger(__name__)
 
 PCR_PLACEHOLDER = """# Patient Care Report — placeholder
 
@@ -33,19 +36,70 @@ def _case_dir(case_id: str) -> Path:
     return _cases_root() / case_id
 
 
+def _review_path(case_dir: Path) -> Path:
+    return case_dir / "review.json"
+
+
+def migrate_legacy_aar_caches() -> int:
+    """Migrate pre-existing cases/*/aar.json files to review.json.
+
+    Step 3 of the QI Case Review update renames the on-disk cache file.
+    On startup, walk the cases dir once and:
+
+    - If review.json already exists for the case, leave aar.json alone
+      and log a warning (newer data wins).
+    - If aar.json parses as a valid QICaseReview, rename it.
+    - Otherwise the file is from before Step 1's schema change and is
+      no longer compatible; delete it. case_01 will be re-seeded from
+      the canonical fixture on next read; other cases simply lose the
+      stale cache until the pipeline runs again.
+
+    Returns the number of files renamed (does not include deletions).
+    """
+
+    root = _cases_root()
+    if not root.exists():
+        return 0
+    migrated = 0
+    for case_dir in sorted(root.iterdir()):
+        if not case_dir.is_dir():
+            continue
+        legacy = case_dir / "aar.json"
+        if not legacy.exists():
+            continue
+        target = _review_path(case_dir)
+        if target.exists():
+            logger.warning(
+                "Skipping migration for %s — review.json already present alongside legacy aar.json.",
+                case_dir.name,
+            )
+            continue
+        try:
+            data = json.loads(legacy.read_text(encoding="utf-8"))
+            QICaseReview.model_validate(data)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Discarding legacy %s/aar.json (incompatible with QICaseReview schema: %s).",
+                case_dir.name,
+                exc.__class__.__name__,
+            )
+            legacy.unlink()
+            continue
+        legacy.rename(target)
+        migrated += 1
+        logger.info("Migrated %s/aar.json → review.json", case_dir.name)
+    return migrated
+
+
 def _seed_case_01() -> None:
     """One-time seed: copy the canonical sample QI Case Review into
-    cases/case_01/aar.json so GET /api/cases/case_01/aar returns realistic
-    data before the pipeline has been run.
-
-    Step 3 of the QI Case Review update will rename the on-disk file
-    from aar.json to review.json with a one-time migration; until then
-    the filename stays put to keep the existing cache + tests working.
+    cases/case_01/review.json so GET /api/cases/case_01/review returns
+    realistic data before the pipeline has been run.
     """
     case_dir = _case_dir("case_01")
     if not case_dir.exists():
         return
-    target = case_dir / "aar.json"
+    target = _review_path(case_dir)
     if target.exists():
         return
     fixture = _fixtures_root() / "sample_qi_review.json"
@@ -106,33 +160,33 @@ def load_pcr_content(case_id: str) -> str:
     return pcr_path.read_text(encoding="utf-8")
 
 
-def load_cached_aar(case_id: str) -> QICaseReview | None:
+def load_cached_review(case_id: str) -> QICaseReview | None:
     case_dir = _case_dir(case_id)
     if case_id == "case_01":
         _seed_case_01()
-    aar_path = case_dir / "aar.json"
-    if not aar_path.exists():
+    review_path = _review_path(case_dir)
+    if not review_path.exists():
         return None
-    data = json.loads(aar_path.read_text(encoding="utf-8"))
+    data = json.loads(review_path.read_text(encoding="utf-8"))
     return QICaseReview.model_validate(data)
 
 
-def save_cached_aar(case_id: str, review: QICaseReview) -> Path:
+def save_cached_review(case_id: str, review: QICaseReview) -> Path:
     case_dir = _case_dir(case_id)
     if not case_dir.is_dir():
         raise FileNotFoundError(f"Case not found: {case_id}")
-    aar_path = case_dir / "aar.json"
-    aar_path.write_text(review.model_dump_json(indent=2), encoding="utf-8")
-    return aar_path
+    review_path = _review_path(case_dir)
+    review_path.write_text(review.model_dump_json(indent=2), encoding="utf-8")
+    return review_path
 
 
-def clear_cached_aar(case_id: str) -> bool:
-    """Delete cases/{id}/aar.json. Returns True if a file was removed."""
+def clear_cached_review(case_id: str) -> bool:
+    """Delete cases/{id}/review.json. Returns True if a file was removed."""
     case_dir = _case_dir(case_id)
     if not case_dir.is_dir():
         raise FileNotFoundError(f"Case not found: {case_id}")
-    aar_path = case_dir / "aar.json"
-    if not aar_path.exists():
+    review_path = _review_path(case_dir)
+    if not review_path.exists():
         return False
-    aar_path.unlink()
+    review_path.unlink()
     return True

@@ -8,10 +8,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from app.case_loader import (
-    clear_cached_aar,
+    clear_cached_review,
     list_cases,
     load_case,
-    load_cached_aar,
+    load_cached_review,
     load_pcr_content,
 )
 from app.config import settings
@@ -42,18 +42,18 @@ async def get_pcr(case_id: str) -> dict[str, str]:
     return {"content": content}
 
 
-@router.get("/cases/{case_id}/aar", response_model=QICaseReview)
-async def get_aar(case_id: str) -> QICaseReview:
-    review = load_cached_aar(case_id)
+@router.get("/cases/{case_id}/review", response_model=QICaseReview)
+async def get_review(case_id: str) -> QICaseReview:
+    review = load_cached_review(case_id)
     if review is None:
         raise HTTPException(status_code=404, detail=f"No cached review for {case_id}")
     return review
 
 
-@router.delete("/cases/{case_id}/aar", status_code=204)
-async def delete_aar(case_id: str) -> None:
+@router.delete("/cases/{case_id}/review", status_code=204)
+async def delete_review(case_id: str) -> None:
     try:
-        clear_cached_aar(case_id)
+        clear_cached_review(case_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
 
-from app.case_loader import load_case, load_cached_aar, save_cached_aar
+from app.case_loader import load_case, load_cached_review, save_cached_review
 from app.pipeline.orchestrator import process_case
 from app.schemas import PipelineProgress, PipelineStage, QICaseReview
 
@@ -62,7 +62,7 @@ async def _demo_stream(case_id: str) -> AsyncIterator[dict]:
     flaky network) but we still want the streaming UI to look real.
     """
 
-    cached = load_cached_aar(case_id)
+    cached = load_cached_review(case_id)
     if cached is None:
         yield {
             "event": "error",
@@ -99,7 +99,7 @@ async def _demo_stream(case_id: str) -> AsyncIterator[dict]:
     yield {
         "event": "complete",
         "data": json.dumps(
-            {"type": "complete", "aar": cached.model_dump(mode="json")}
+            {"type": "complete", "review": cached.model_dump(mode="json")}
         ),
     }
 
@@ -126,10 +126,10 @@ async def stream_pipeline(
         try:
             review = await process_case(case, push_progress)
             try:
-                save_cached_aar(case_id, review)
+                save_cached_review(case_id, review)
             except Exception as cache_exc:  # noqa: BLE001
                 logger.warning("Failed to cache review for %s: %s", case_id, cache_exc)
-            await queue.put({"type": "complete", "aar": review.model_dump(mode="json")})
+            await queue.put({"type": "complete", "review": review.model_dump(mode="json")})
         except Exception as exc:  # noqa: BLE001
             await queue.put({"type": "error", "message": str(exc)})
         finally:

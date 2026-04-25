@@ -1,11 +1,21 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.cases import router as cases_router
 from app.api.pipeline import router as pipeline_router
+from app.case_loader import migrate_legacy_aar_caches
 from app.config import settings
 
-app = FastAPI(title="Sentinel Backend", version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    migrate_legacy_aar_caches()
+    yield
+
+
+app = FastAPI(title="Sentinel Backend", version="0.3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
