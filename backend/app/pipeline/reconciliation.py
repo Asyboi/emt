@@ -52,6 +52,13 @@ logger = logging.getLogger(__name__)
 DISCREPANCY_THRESHOLD_SECONDS = 10.0
 DISCREPANCY_SCORE_THRESHOLD = 0.15
 
+_CLUSTER_SEM = asyncio.Semaphore(5)
+
+
+async def _gated(coro):
+    async with _CLUSTER_SEM:
+        return await coro
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -478,11 +485,11 @@ async def reconcile(
     # return_exceptions=True so a single cluster failure degrades gracefully
     raw_scored, raw_drafts = await asyncio.gather(
         asyncio.gather(
-            *[_score_cluster(c, by_id) for c in clusters],
+            *[_gated(_score_cluster(c, by_id)) for c in clusters],
             return_exceptions=True,
         ),
         asyncio.gather(
-            *[_canonicalize_cluster(c, by_id) for c in clusters],
+            *[_gated(_canonicalize_cluster(c, by_id)) for c in clusters],
             return_exceptions=True,
         ),
     )
@@ -512,4 +519,10 @@ async def reconcile(
             draft_list.append(result)
 
     # Agent 4 — Critic verification pass (sequential, Sonnet)
-    return await _critic_pass(scored_list, draft_list, all_events)
+    try:
+        return await _critic_pass(scored_list, draft_list, all_events)
+    except Exception as exc:
+        logger.warning(
+            "Agent 4 (critic) failed — assembling timeline directly from draft entries: %s", exc
+        )
+        return _assemble_from_drafts(scored_list, draft_list, by_id)

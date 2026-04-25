@@ -34,7 +34,7 @@ async def claude_haiku(
         "messages": messages,
     }
     if system is not None:
-        kwargs["system"] = system
+        kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
     if tools is not None:
         kwargs["tools"] = tools
     response = await _client.messages.create(**kwargs)
@@ -54,7 +54,7 @@ async def claude_sonnet(
         "messages": messages,
     }
     if system is not None:
-        kwargs["system"] = system
+        kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
     if tools is not None:
         kwargs["tools"] = tools
     response = await _client.messages.create(**kwargs)
