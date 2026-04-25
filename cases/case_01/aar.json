@@ -1,0 +1,225 @@
+{
+  "case_id": "case_01",
+  "generated_at": "2026-04-24T14:32:08Z",
+  "summary": "65-year-old male with witnessed out-of-hospital cardiac arrest at a residential address. Bystander CPR was initiated by the patient's spouse approximately 90 seconds before EMS arrival. On EMS arrival the patient was pulseless and apneic with an initial rhythm of ventricular fibrillation.\n\nACLS was performed including continuous compressions, two defibrillation attempts at 200J, IV access, and three rounds of epinephrine 1mg IV. Advanced airway was placed via i-gel supraglottic device. Return of spontaneous circulation (ROSC) was achieved at approximately 08:00 from incident start, with a post-ROSC rhythm of normal sinus at 92 bpm and palpable carotid pulse.\n\nPatient was packaged and transported to the regional cardiac receiving center with continuous monitoring. Total scene time was approximately 11 minutes. This review identified one critical timing discrepancy and two concerns warranting QA follow-up; overall ACLS adherence was acceptable but with documented deviations in epinephrine interval and airway timing.",
+  "timeline": [
+    {
+      "entry_id": "tle_01_arrival",
+      "canonical_timestamp_seconds": 120.0,
+      "canonical_description": "EMS arrives on scene; patient pulseless, apneic, bystander CPR in progress.",
+      "event_type": "arrival",
+      "match_confidence": 0.94,
+      "has_discrepancy": false,
+      "source_events": [
+        {
+          "event_id": "evt_a1f3e2b4-pcr-arrival",
+          "timestamp": "00:02:00",
+          "timestamp_seconds": 120.0,
+          "source": "pcr",
+          "event_type": "arrival",
+          "description": "Arrived on scene at private residence; patient supine on living room floor, bystander CPR in progress by spouse.",
+          "details": {"address_redacted": true, "scene_safety": "secured"},
+          "confidence": 0.98,
+          "raw_evidence": "PCR narrative: 'Unit 14 arrived on scene at 14:02. Pt found supine on living room floor with spouse performing chest compressions. Pt was pulseless and apneic on assessment.'"
+        },
+        {
+          "event_id": "evt_a1f3e2b4-vid-arrival",
+          "timestamp": "00:02:03",
+          "timestamp_seconds": 123.0,
+          "source": "video",
+          "event_type": "arrival",
+          "description": "Body-cam shows medic entering residence and approaching patient; spouse providing compressions.",
+          "details": {"camera": "medic_1_bodycam"},
+          "confidence": 0.91,
+          "raw_evidence": "Video timestamp 00:02:03 — front door opens, two medics enter, kit drops at 00:02:11, spouse audibly counting compressions."
+        },
+        {
+          "event_id": "evt_a1f3e2b4-aud-arrival",
+          "timestamp": "00:01:58",
+          "timestamp_seconds": 118.0,
+          "source": "audio",
+          "event_type": "arrival",
+          "description": "Dispatch audio: 'Unit 14 on scene' transmission.",
+          "details": {"channel": "EMS_OPS_3"},
+          "confidence": 0.88,
+          "raw_evidence": "Radio traffic 14:01:58 — Medic 14: 'Dispatch, Unit 14 on scene, going in.'"
+        }
+      ]
+    },
+    {
+      "entry_id": "tle_02_first_defib",
+      "canonical_timestamp_seconds": 240.0,
+      "canonical_description": "First defibrillation at 200J biphasic for ventricular fibrillation.",
+      "event_type": "defibrillation",
+      "match_confidence": 0.89,
+      "has_discrepancy": true,
+      "source_events": [
+        {
+          "event_id": "evt_b2c4d5e6-pcr-defib1",
+          "timestamp": "00:04:00",
+          "timestamp_seconds": 240.0,
+          "source": "pcr",
+          "event_type": "defibrillation",
+          "description": "First shock delivered at 200J biphasic; rhythm pre-shock ventricular fibrillation.",
+          "details": {"energy_joules": 200, "pads_position": "anterior_lateral"},
+          "confidence": 0.96,
+          "raw_evidence": "PCR interventions: 'Defib #1 at 14:04 — 200J biphasic, V-fib. CPR resumed immediately post-shock.'"
+        },
+        {
+          "event_id": "evt_b2c4d5e6-vid-defib1",
+          "timestamp": "00:04:18",
+          "timestamp_seconds": 258.0,
+          "source": "video",
+          "event_type": "defibrillation",
+          "description": "Monitor screen visible in body-cam; shock delivered, observable patient muscle contraction.",
+          "details": {"camera": "medic_2_bodycam", "monitor_visible": true},
+          "confidence": 0.93,
+          "raw_evidence": "Video 00:04:14 — 'Clear!' verbalized; 00:04:18 — shock button pressed, patient torso jerks, monitor shows post-shock asystole transitioning to fine V-fib."
+        }
+      ]
+    },
+    {
+      "entry_id": "tle_03_rosc",
+      "canonical_timestamp_seconds": 480.0,
+      "canonical_description": "Return of spontaneous circulation; carotid pulse palpable, monitor shows narrow-complex rhythm at 92 bpm.",
+      "event_type": "patient_response",
+      "match_confidence": 0.97,
+      "has_discrepancy": false,
+      "source_events": [
+        {
+          "event_id": "evt_c3d5e7f8-pcr-rosc",
+          "timestamp": "00:08:00",
+          "timestamp_seconds": 480.0,
+          "source": "pcr",
+          "event_type": "patient_response",
+          "description": "ROSC achieved. Post-ROSC rhythm: NSR at 92 bpm. Carotid pulse strong and regular.",
+          "details": {"post_rosc_hr": 92, "post_rosc_rhythm": "NSR", "spo2": 84},
+          "confidence": 0.97,
+          "raw_evidence": "PCR narrative: 'ROSC at 14:08. Carotid palpable, monitor NSR @ 92, SpO2 84% on BVM ventilation.'"
+        },
+        {
+          "event_id": "evt_c3d5e7f8-vid-rosc",
+          "timestamp": "00:08:02",
+          "timestamp_seconds": 482.0,
+          "source": "video",
+          "event_type": "patient_response",
+          "description": "Body-cam captures medic verbalizing 'I have a pulse' and pulse-check on carotid.",
+          "details": {"camera": "medic_1_bodycam"},
+          "confidence": 0.95,
+          "raw_evidence": "Video 00:08:02 — Medic 1: 'Hold compressions — I've got a pulse, strong carotid.' Monitor visible showing organized rhythm."
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "fnd_01_epi_timing",
+      "severity": "critical",
+      "category": "timing_discrepancy",
+      "title": "First epinephrine dose documented 30 seconds earlier than video evidence",
+      "explanation": "PCR records first epinephrine 1mg IV administered at 04:05 from incident start. Body-cam video shows the syringe pushed at 04:35 with verbal callout 'epi in.' This 30-second timing discrepancy is significant because subsequent epinephrine doses are charted relative to the (incorrect) first dose, propagating the error through the ACLS interval reconstruction.",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1", "evt_a1f3e2b4-pcr-arrival"],
+      "evidence_timestamp_seconds": 245.0,
+      "pcr_excerpt": "Medications: 'Epinephrine 1mg IV push at 14:04:05 — administered by Medic 2 via 18g antecubital line.'",
+      "suggested_review_action": "Reconcile medication timestamps with body-cam clock; correct charted times in PCR before submission to QA. Re-check intervals to confirm subsequent doses still met 3-5 min spacing requirement."
+    },
+    {
+      "finding_id": "fnd_02_iv_undocumented",
+      "severity": "concern",
+      "category": "missing_documentation",
+      "title": "Second IV access attempt visible on video but absent from PCR",
+      "explanation": "Body-cam captures a 16g external jugular IV attempt by Medic 1 at 03:42 from incident start, following a failed antecubital attempt. Only the successful antecubital line is documented in the PCR. While the EJ attempt was unsuccessful, the procedure should be charted including indication and outcome per agency policy.",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1"],
+      "evidence_timestamp_seconds": 222.0,
+      "pcr_excerpt": "Procedures: '18g IV antecubital, first attempt successful, no extravasation noted.' (No mention of EJ attempt.)",
+      "suggested_review_action": "Add EJ access attempt to PCR procedures section; include indication (initial AC attempt failed), time, and outcome. Crew education on documenting unsuccessful procedures."
+    },
+    {
+      "finding_id": "fnd_03_phantom_rhythm_check",
+      "severity": "concern",
+      "category": "phantom_intervention",
+      "title": "PCR documents a rhythm check at 06:00 that is not corroborated by video or audio",
+      "explanation": "PCR lists a rhythm check at 06:00 from incident start showing 'persistent V-fib.' Body-cam shows continuous compressions during this window with no pause for rhythm assessment, and dispatch audio contains no rhythm callout in this period. The next observed rhythm check on video occurs at 06:18. The 06:00 entry is likely a charting estimate rather than an actual interruption of CPR.",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1", "evt_c3d5e7f8-vid-rosc"],
+      "evidence_timestamp_seconds": 360.0,
+      "pcr_excerpt": "Rhythm checks: '14:06 — V-fib, continued CPR.' Listed between epinephrine entries.",
+      "suggested_review_action": "Confirm actual rhythm-check time with crew; if reconstructed/estimated, annotate as such in PCR and remove from billable interventions list."
+    },
+    {
+      "finding_id": "fnd_04_advanced_airway_late",
+      "severity": "info",
+      "category": "protocol_deviation",
+      "title": "Advanced airway placement deferred until 06:30, slightly later than recommended target",
+      "explanation": "Agency ACLS protocol recommends advanced airway placement within 5 minutes of arrest recognition when feasible. The i-gel was placed at 06:30 from incident start (~04:30 from EMS arrival). Crew documentation indicates BVM ventilation was effective during the delay and the priority was uninterrupted compressions, which is a defensible clinical decision. Flagged for awareness only.",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1"],
+      "evidence_timestamp_seconds": 390.0,
+      "pcr_excerpt": "Airway: 'i-gel size 4 placed at 14:06:30 — first attempt successful, ETCO2 waveform confirmed at 28 mmHg.'",
+      "suggested_review_action": "No action required. Suggest noting BVM-vs-advanced-airway decision rationale in narrative for future QA clarity."
+    }
+  ],
+  "protocol_checks": [
+    {
+      "check_id": "chk_01_cpr_within_60s",
+      "protocol_step": {
+        "step_id": "acls_cpr_initiation",
+        "description": "Initiate or confirm high-quality CPR within 60 seconds of patient contact for confirmed cardiac arrest.",
+        "expected_timing_seconds": 60.0,
+        "required": true
+      },
+      "status": "adherent",
+      "evidence_event_ids": ["evt_a1f3e2b4-pcr-arrival", "evt_a1f3e2b4-vid-arrival"],
+      "explanation": "Bystander CPR was already in progress on EMS arrival. EMS assumed compressions within 25 seconds of patient contact (video confirms transition at 02:28 from incident start). Within target."
+    },
+    {
+      "check_id": "chk_02_epi_interval",
+      "protocol_step": {
+        "step_id": "acls_epinephrine_interval",
+        "description": "Administer epinephrine 1mg IV/IO every 3-5 minutes during cardiac arrest until ROSC or termination.",
+        "expected_timing_seconds": 240.0,
+        "required": true
+      },
+      "status": "deviation",
+      "evidence_event_ids": ["evt_b2c4d5e6-pcr-defib1"],
+      "explanation": "Three epinephrine doses given. Interval between dose 2 and dose 3 was 5 minutes 50 seconds per body-cam timestamps, exceeding the 3-5 minute window. Dose 1-to-2 interval (4:00) was within range."
+    },
+    {
+      "check_id": "chk_03_rhythm_check_2min",
+      "protocol_step": {
+        "step_id": "acls_rhythm_check_interval",
+        "description": "Perform rhythm check every 2 minutes during ACLS resuscitation.",
+        "expected_timing_seconds": 120.0,
+        "required": true
+      },
+      "status": "adherent",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1", "evt_c3d5e7f8-vid-rosc"],
+      "explanation": "Rhythm checks observed at 02:30, 04:14, 06:18, and 08:00 from incident start. All intervals within ±15 seconds of the 2-minute target. Note: PCR-documented 06:00 check appears to be a charting estimate (see finding fnd_03)."
+    },
+    {
+      "check_id": "chk_04_defib_shockable",
+      "protocol_step": {
+        "step_id": "acls_defibrillation_vfib_vtach",
+        "description": "Defibrillate at 200J biphasic immediately upon identification of ventricular fibrillation or pulseless ventricular tachycardia.",
+        "expected_timing_seconds": null,
+        "required": true
+      },
+      "status": "adherent",
+      "evidence_event_ids": ["evt_b2c4d5e6-pcr-defib1", "evt_b2c4d5e6-vid-defib1"],
+      "explanation": "Two shocks delivered for V-fib at 200J biphasic. Both followed identification of shockable rhythm with minimal hands-off time (<10 seconds). Pads positioned anterior-lateral per protocol."
+    },
+    {
+      "check_id": "chk_05_airway_management",
+      "protocol_step": {
+        "step_id": "acls_advanced_airway",
+        "description": "Establish advanced airway (supraglottic or endotracheal) within 5 minutes of arrest when feasible without compromising compressions.",
+        "expected_timing_seconds": 300.0,
+        "required": false
+      },
+      "status": "deviation",
+      "evidence_event_ids": ["evt_c3d5e7f8-vid-rosc"],
+      "explanation": "i-gel supraglottic placed at 06:30 from incident start (04:30 post-arrival), 90 seconds beyond the 5-minute soft target. BVM ventilation was effective during the delay; deviation is minor and clinically defensible (see finding fnd_04)."
+    }
+  ],
+  "adherence_score": 0.72,
+  "narrative": "This after-action review covers a 65-year-old male who suffered a witnessed out-of-hospital cardiac arrest at a private residence. Bystander CPR was initiated by his spouse approximately 90 seconds before EMS arrival, contributing to the favorable rhythm presentation (ventricular fibrillation rather than asystole) and ultimately to ROSC at 08:00 from incident start. EMS performance was, on balance, consistent with current ACLS guidelines, with high-quality compressions, prompt defibrillation, and effective post-ROSC stabilization.\n\nThree concerns were identified during reconciliation of the PCR with body-cam and dispatch audio. The most significant is a 30-second discrepancy between the documented and observed time of first epinephrine administration (see fnd_01_epi_timing). Because subsequent doses are charted relative to the first, this error propagates through the medication timeline; the QA team should reconcile the medication record against the body-cam clock before this PCR is finalized. A second concern (fnd_03_phantom_rhythm_check) involves a rhythm check documented at 06:00 that does not appear in either the video or radio audio record — likely a reconstruction during charting rather than an actual interruption of compressions.\n\nThe third concern (fnd_02_iv_undocumented) is an unsuccessful external jugular IV attempt visible on body-cam at 03:42 that is absent from the PCR. While the procedure failed and a subsequent antecubital line was placed successfully, agency policy requires documentation of all procedures including unsuccessful attempts. A fourth, lower-severity finding (fnd_04_advanced_airway_late) flags that advanced airway placement occurred at 06:30, 90 seconds beyond the 5-minute soft target; BVM ventilation during the delay was effective and the deviation is clinically defensible.\n\nOverall ACLS adherence is scored at 0.72. Five protocol checks were performed: three adherent (CPR initiation timing, rhythm-check interval, defibrillation for shockable rhythm) and two deviations (epinephrine interval slipping past 5 minutes between dose 2 and 3; advanced airway placement marginally delayed). Recommended QA actions are documented per finding above. ROSC was sustained through transport and the patient was transferred to the cardiac receiving center in stable condition.",
+  "reviewer_notes": ""
+}
