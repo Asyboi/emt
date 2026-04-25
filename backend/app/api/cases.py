@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from app.case_loader import (
+    clear_cached_aar,
     list_cases,
     load_case,
     load_cached_aar,
@@ -47,6 +48,14 @@ async def get_aar(case_id: str) -> AARDraft:
     if aar is None:
         raise HTTPException(status_code=404, detail=f"No cached AAR for {case_id}")
     return aar
+
+
+@router.delete("/cases/{case_id}/aar", status_code=204)
+async def delete_aar(case_id: str) -> None:
+    try:
+        clear_cached_aar(case_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/cases/{case_id}/video")

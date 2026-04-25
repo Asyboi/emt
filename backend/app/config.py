@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     GOOGLE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+    ELEVENLABS_API_KEY: str = ""
 
     CASES_DIR: Path = Path("../cases")
     PROTOCOLS_DIR: Path = Path("../protocols")

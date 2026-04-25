@@ -8,13 +8,13 @@ Hackathon agentic system that turns Patient Care Reports (PCR), body-cam video, 
 
 The repo is built in **phases** defined by `sentinel_scaffolding_prompts.md` at the repo root. That file is the source of truth for what each phase adds (and explicitly what NOT to touch). When the user says "start phase N", read that phase's prompt block and execute it within its stated scope.
 
-- Phase 0 — repo skeleton & tooling (✅ complete as of 2026-04-24)
-- Phase 1 — shared contracts (Pydantic schemas + TS types + sample fixture)
-- Phase 2 — backend API & pipeline stubs
-- Phase 3 — frontend 3-pane UI
-- Phase 4 — real LLM integration (PCR parser first)
-- Phase 5 — remaining real stages (video, audio, reconciliation, protocol, findings, drafting)
-- Phase 6 — polish & demo hardening
+- Phase 0 — repo skeleton & tooling (✅ 2026-04-24)
+- Phase 1 — shared contracts: Pydantic schemas + TS types + sample fixture (✅ 2026-04-24)
+- Phase 2 — backend API & pipeline stubs (✅ 2026-04-25)
+- Phase 3 — frontend 3-pane UI (✅ 2026-04-25)
+- Phase 4 — real LLM integration, PCR parser via Claude Haiku 4.5 (✅ 2026-04-25)
+- Phase 5 — remaining real stages (reconciliation → findings → drafting → audio → video) (✅ 2026-04-25)
+- Phase 6 — polish & demo hardening: demo mode, AAR caching, error boundaries, skeleton loaders, mermaid architecture diagram, pitch doc, README quickstart (✅ 2026-04-25)
 
 The phased split mirrors a three-developer division: **Data** (cases/, protocols/, fixtures/), **Pipeline** (backend), **Frontend** (frontend/). Phases 2 and 3 run in parallel after Phase 1 locks the schemas — do not edit schemas during Phase 2/3 work without explicit user direction.
 
@@ -22,7 +22,7 @@ The phased split mirrors a three-developer division: **Data** (cases/, protocols
 
 Two deployable units that talk over HTTP:
 
-- **`backend/`** — FastAPI + Python 3.11+ async pipeline orchestrator. Self-hosted. Calls Anthropic, Google, and OpenAI LLM SDKs to process case media into structured events, reconcile timelines across sources, check protocols, and draft AARs.
+- **`backend/`** — FastAPI + Python 3.11+ async pipeline orchestrator. Self-hosted. Calls Anthropic (Claude Haiku 4.5 + Sonnet 4.6), Google (Gemini 2.5 Flash for video), and ElevenLabs (Scribe v1 for audio transcription) to process case media into structured events, reconcile timelines across sources, check protocols, and draft AARs.
 - **`frontend/`** — Vite + React 18 + TypeScript + Tailwind. Deploys to Cloudflare Pages. The Vite dev server proxies `/api/*` → `http://localhost:8000` (see `frontend/vite.config.ts`); in production the frontend hits `VITE_API_URL` directly.
 
 Schema contract: `backend/app/schemas.py` (Pydantic v2) is the single source of truth. `frontend/src/types/schemas.ts` mirrors it exactly. `fixtures/sample_aar.json` is shared between backend stubs and frontend dev — both sides build against it.

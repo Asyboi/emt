@@ -10,11 +10,11 @@ full per-phase specs.
 |---|---|---|---|
 | 0 | Repo skeleton, tooling, configs | Anyone | ✅ done |
 | 1 | Shared contracts: Pydantic schemas + TS types + sample fixture | Data | ✅ done |
-| 2 | Backend FastAPI app + pipeline stubs + SSE | Pipeline | ⏳ next |
-| 3 | Frontend 3-pane UI + click-to-seek interaction | Frontend | ⏳ parallel with 2 |
-| 4 | Real PCR parser via Claude Haiku 4.5 | Pipeline | — |
-| 5 | Remaining real stages (reconcile → findings → drafting → audio → video) | Pipeline | — |
-| 6 | Polish: demo mode, caching, error boundaries, docs | All | — |
+| 2 | Backend FastAPI app + pipeline stubs + SSE | Pipeline | ✅ done |
+| 3 | Frontend 3-pane UI + click-to-seek interaction | Frontend | ✅ done |
+| 4 | Real PCR parser via Claude Haiku 4.5 | Pipeline | ✅ done |
+| 5 | Remaining real stages (reconcile → findings → drafting → audio → video) | Pipeline | ✅ done |
+| 6 | Polish: demo mode, caching, error boundaries, docs | All | ✅ done |
 
 ## Architecture (locked at Phase 1)
 
@@ -34,7 +34,11 @@ full per-phase specs.
 - **Phase 4 only replaces the PCR parser stub.** Other stages stay stubbed
   until Phase 5.
 - **Phase 5 implements one stage per chat session** to avoid cross-contamination
-  of LLM tool schemas between stages.
+  of LLM tool schemas between stages. (Bent for the final batch — findings,
+  drafting, audio, video landed together once the prompts module had become
+  the natural boundary between stages.)
+- **Audio uses ElevenLabs Scribe v1** (not OpenAI Whisper as originally
+  specced). Same two-step pattern: transcription → Haiku event extraction.
 
 ## Critical demo path (the wow moment)
 

@@ -110,3 +110,24 @@ def load_cached_aar(case_id: str) -> AARDraft | None:
         return None
     data = json.loads(aar_path.read_text(encoding="utf-8"))
     return AARDraft.model_validate(data)
+
+
+def save_cached_aar(case_id: str, aar: AARDraft) -> Path:
+    case_dir = _case_dir(case_id)
+    if not case_dir.is_dir():
+        raise FileNotFoundError(f"Case not found: {case_id}")
+    aar_path = case_dir / "aar.json"
+    aar_path.write_text(aar.model_dump_json(indent=2), encoding="utf-8")
+    return aar_path
+
+
+def clear_cached_aar(case_id: str) -> bool:
+    """Delete cases/{id}/aar.json. Returns True if a file was removed."""
+    case_dir = _case_dir(case_id)
+    if not case_dir.is_dir():
+        raise FileNotFoundError(f"Case not found: {case_id}")
+    aar_path = case_dir / "aar.json"
+    if not aar_path.exists():
+        return False
+    aar_path.unlink()
+    return True
