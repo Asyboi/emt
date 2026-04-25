@@ -1,21 +1,21 @@
 import { useEffect, useState } from "react";
 
-import { getAAR, getCase } from "@/lib/api";
-import { demoCases, loadDemoAAR } from "@/lib/demo";
-import type { AARDraft, Case } from "@/types/schemas";
+import { getCase, getReview } from "@/lib/api";
+import { demoCases, loadDemoReview } from "@/lib/demo";
+import type { Case, QICaseReview } from "@/types/schemas";
 
 export interface UseCaseResult {
   caseData: Case | null;
-  aar: AARDraft | null;
+  review: QICaseReview | null;
   loading: boolean;
   error: string | null;
-  setAAR: (aar: AARDraft | null) => void;
+  setReview: (review: QICaseReview | null) => void;
   reload: () => void;
 }
 
 export function useCase(caseId: string | null, demoMode: boolean): UseCaseResult {
   const [caseData, setCaseData] = useState<Case | null>(null);
-  const [aar, setAAR] = useState<AARDraft | null>(null);
+  const [review, setReview] = useState<QICaseReview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -23,7 +23,7 @@ export function useCase(caseId: string | null, demoMode: boolean): UseCaseResult
   useEffect(() => {
     if (!caseId) {
       setCaseData(null);
-      setAAR(null);
+      setReview(null);
       setError(null);
       return;
     }
@@ -46,27 +46,27 @@ export function useCase(caseId: string | null, demoMode: boolean): UseCaseResult
         } else {
           setError((err as Error).message);
           setCaseData(null);
-          setAAR(null);
+          setReview(null);
           setLoading(false);
           return;
         }
       }
 
       try {
-        const a = await getAAR(caseId);
+        const r = await getReview(caseId);
         if (cancelled) return;
-        setAAR(a);
+        setReview(r);
       } catch {
         if (cancelled) return;
         if (demoMode) {
           try {
-            const fallback = await loadDemoAAR();
-            if (!cancelled) setAAR(fallback);
+            const fallback = await loadDemoReview();
+            if (!cancelled) setReview(fallback);
           } catch {
-            if (!cancelled) setAAR(null);
+            if (!cancelled) setReview(null);
           }
         } else {
-          setAAR(null);
+          setReview(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -80,10 +80,10 @@ export function useCase(caseId: string | null, demoMode: boolean): UseCaseResult
 
   return {
     caseData,
-    aar,
+    review,
     loading,
     error,
-    setAAR,
+    setReview,
     reload: () => setReloadToken((t) => t + 1),
   };
 }

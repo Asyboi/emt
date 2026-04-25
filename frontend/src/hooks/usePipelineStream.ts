@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { streamCase } from "@/lib/api";
-import { loadDemoAAR, runSyntheticStream, type SyntheticStreamHandle } from "@/lib/demo";
-import type { AARDraft, PipelineProgress, PipelineStage } from "@/types/schemas";
+import { loadDemoReview, runSyntheticStream, type SyntheticStreamHandle } from "@/lib/demo";
+import type { QICaseReview, PipelineProgress, PipelineStage } from "@/types/schemas";
 
 export const PIPELINE_STAGES: PipelineStage[] = [
   "pcr_parsing",
@@ -23,7 +23,7 @@ export interface UsePipelineStreamResult {
 }
 
 export function usePipelineStream(
-  onComplete: (aar: AARDraft) => void,
+  onComplete: (review: QICaseReview) => void,
 ): UsePipelineStreamResult {
   const [stages, setStages] = useState<PipelineProgress[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -63,15 +63,15 @@ export function usePipelineStream(
   }, []);
 
   const startSynthetic = useCallback(
-    async (onDone: (aar: AARDraft) => void) => {
+    async (onDone: (review: QICaseReview) => void) => {
       try {
-        const aar = await loadDemoAAR();
-        syntheticRef.current = runSyntheticStream(aar, {
+        const review = await loadDemoReview();
+        syntheticRef.current = runSyntheticStream(review, {
           onProgress: handleProgress,
-          onComplete: (a) => {
+          onComplete: (r) => {
             setIsStreaming(false);
             syntheticRef.current = null;
-            onDone(a);
+            onDone(r);
           },
         });
       } catch (err) {
@@ -103,10 +103,10 @@ export function usePipelineStream(
         caseId,
         {
           onProgress: handleProgress,
-          onComplete: (aar) => {
+          onComplete: (review) => {
             setIsStreaming(false);
             closeSource();
-            onComplete(aar);
+            onComplete(review);
           },
           onError: (message) => {
             // In demo mode the backend may be unreachable — fall back to a

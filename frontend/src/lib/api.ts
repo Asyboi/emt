@@ -1,4 +1,4 @@
-import type { AARDraft, Case, PipelineProgress } from "@/types/schemas";
+import type { Case, PipelineProgress, QICaseReview } from "@/types/schemas";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
@@ -26,14 +26,14 @@ export function getPCR(id: string): Promise<{ content: string }> {
   return getJSON<{ content: string }>(`/cases/${id}/pcr`);
 }
 
-export function getAAR(id: string): Promise<AARDraft> {
-  return getJSON<AARDraft>(`/cases/${id}/aar`);
+export function getReview(id: string): Promise<QICaseReview> {
+  return getJSON<QICaseReview>(`/cases/${id}/review`);
 }
 
-export async function deleteAAR(id: string): Promise<void> {
-  const res = await fetch(apiUrl(`/cases/${id}/aar`), { method: "DELETE" });
+export async function deleteReview(id: string): Promise<void> {
+  const res = await fetch(apiUrl(`/cases/${id}/review`), { method: "DELETE" });
   if (!res.ok && res.status !== 404) {
-    throw new Error(`DELETE /cases/${id}/aar failed: ${res.status}`);
+    throw new Error(`DELETE /cases/${id}/review failed: ${res.status}`);
   }
 }
 
@@ -43,7 +43,7 @@ export function getVideoUrl(id: string): string {
 
 export interface StreamHandlers {
   onProgress: (progress: PipelineProgress) => void;
-  onComplete: (aar: AARDraft) => void;
+  onComplete: (review: QICaseReview) => void;
   onError: (message: string) => void;
 }
 
@@ -70,8 +70,11 @@ export function streamCase(
 
   source.addEventListener("complete", (event) => {
     try {
-      const data = JSON.parse((event as MessageEvent).data) as { type: string; aar: AARDraft };
-      handlers.onComplete(data.aar);
+      const data = JSON.parse((event as MessageEvent).data) as {
+        type: string;
+        review: QICaseReview;
+      };
+      handlers.onComplete(data.review);
     } catch (err) {
       handlers.onError(`Failed to parse complete event: ${(err as Error).message}`);
     } finally {

@@ -1,11 +1,11 @@
 import type {
-  AARDraft,
   Case,
   PipelineProgress,
   PipelineStage,
+  QICaseReview,
 } from "@/types/schemas";
 
-const FIXTURE_URL = "/demo/sample_aar.json";
+const FIXTURE_URL = "/demo/sample_qi_review.json";
 const PCR_URL = "/demo/sample_pcr.md";
 
 export const DEMO_STAGES: PipelineStage[] = [
@@ -26,10 +26,10 @@ export function isDemoMode(): boolean {
   return import.meta.env.VITE_DEMO_MODE === "1";
 }
 
-export async function loadDemoAAR(): Promise<AARDraft> {
+export async function loadDemoReview(): Promise<QICaseReview> {
   const res = await fetch(FIXTURE_URL);
   if (!res.ok) throw new Error(`Demo fixture missing: ${res.status}`);
-  return (await res.json()) as AARDraft;
+  return (await res.json()) as QICaseReview;
 }
 
 export async function loadDemoPCR(): Promise<string> {
@@ -66,10 +66,10 @@ export interface SyntheticStreamHandle {
  * pipeline uses.
  */
 export function runSyntheticStream(
-  aar: AARDraft,
+  review: QICaseReview,
   handlers: {
     onProgress: (progress: PipelineProgress) => void;
-    onComplete: (aar: AARDraft) => void;
+    onComplete: (review: QICaseReview) => void;
   },
   stageDelayMs = 350,
 ): SyntheticStreamHandle {
@@ -106,7 +106,7 @@ export function runSyntheticStream(
 
   schedule(() => {
     if (cancelled) return;
-    handlers.onComplete(aar);
+    handlers.onComplete(review);
   }, DEMO_STAGES.length * stageDelayMs * 2 + 100);
 
   return {

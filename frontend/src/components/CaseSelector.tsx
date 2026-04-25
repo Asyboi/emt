@@ -11,7 +11,7 @@ interface CaseSelectorProps {
   onReset: () => void;
   isProcessing: boolean;
   demoMode: boolean;
-  hasCachedAAR: boolean;
+  hasCachedReview: boolean;
 }
 
 export function CaseSelector({
@@ -22,14 +22,14 @@ export function CaseSelector({
   onReset,
   isProcessing,
   demoMode,
-  hasCachedAAR,
+  hasCachedReview,
 }: CaseSelectorProps) {
   return (
     <div className="flex items-center gap-2">
       {demoMode && (
         <span
           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-xs font-medium"
-          title="Pipeline replays cached AAR with synthetic timing"
+          title="Pipeline replays cached review with synthetic timing"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse" />
           Demo Mode
@@ -54,8 +54,8 @@ export function CaseSelector({
       <button
         type="button"
         onClick={onReset}
-        disabled={isProcessing || !selectedId || (!hasCachedAAR && !demoMode)}
-        title="Clear cached AAR and re-run live"
+        disabled={isProcessing || !selectedId || (!hasCachedReview && !demoMode)}
+        title="Clear cached review and re-run live"
         className={cn(
           "h-9 inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 text-sm font-medium text-gray-700",
           "hover:bg-gray-50 hover:border-gray-400 transition-colors",

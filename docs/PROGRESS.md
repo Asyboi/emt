@@ -5,6 +5,117 @@ after every meaningful change. Newest entries at the top of each section.
 
 ## Completed
 
+### QI Case Review Update — Step 4: Frontend (basic / placeholder) (2026-04-25)
+
+Frontend rebuilt against the renamed `/review` endpoint and the new
+`QICaseReview` shape. Per user direction this is a basic placeholder
+shell — no animations, no severity/icon-heavy redesign — just enough
+to render every section and exercise the click-to-seek interaction
+end-to-end. Polish lands later.
+
+**Frontend.**
+
+- `frontend/src/lib/api.ts` — `getAAR`/`deleteAAR` →
+  `getReview`/`deleteReview`; endpoint paths `/aar` → `/review`. The
+  SSE `complete` event handler now reads `data.review` (not
+  `data.aar`). Type signatures use `QICaseReview` everywhere.
+- `frontend/src/lib/demo.ts` — fixture URL
+  `/demo/sample_aar.json` → `/demo/sample_qi_review.json`,
+  `loadDemoAAR` → `loadDemoReview`. `runSyntheticStream` accepts a
+  `QICaseReview`. `frontend/public/demo/sample_aar.json` deleted in
+  favor of `sample_qi_review.json` (a copy of the canonical
+  `fixtures/sample_qi_review.json`).
+- `frontend/src/hooks/useCase.ts` — state + setter renamed
+  `aar` → `review`, `setAAR` → `setReview`. Falls back to
+  `loadDemoReview()` when in demo mode and the live API errors.
+- `frontend/src/hooks/usePipelineStream.ts` — type and parameter
+  renames (`AARDraft` → `QICaseReview`, `aar` → `review`); behavior
+  unchanged.
+- `frontend/src/components/ReviewPane.tsx` (NEW; replaces
+  `AARPane.tsx`, which was deleted). Renders:
+  1. Header (case_id chip)
+  2. DeterminationBanner (color-coded by determination value)
+  3. CaseHeader (incident metadata + crew_members)
+  4. IncidentSummary (preserves whitespace, no markdown)
+  5. UtsteinDataCard (only when `utstein_data` is non-null)
+  6. Findings (severity-sorted, reuses `FindingCard` for the wow
+     moment — clicking still drives `selectedFindingId` for video
+     seek + PCR highlight)
+  7. ClinicalAssessmentSection (grouped by category, status badges,
+     clickable when an item carries `evidence_event_ids` → seeks the
+     video to the first cited event's `timestamp_seconds`)
+  8. DocumentationQualitySection (3 progress bars + listed issues)
+  9. ProtocolChecksSection (collapsed by default, status badges,
+     adherence percentage in the header)
+  10. RecommendationsSection (grouped by audience, priority badges)
+  11. ReviewerNotesField (textarea + Sign-Off button)
+  Uses simple Tailwind utilities — no `lucide-react` icons in the new
+  sections (FindingCard's existing icon usage is preserved). All
+  sections collapsible via a small inline `CollapsibleSection`
+  helper; `▾` / `▸` glyphs as the toggle indicator.
+- `frontend/src/App.tsx` — state names `aar` → `review`, `setAAR` →
+  `setReview`; renders `<ReviewPane>` instead of `<AARPane>`. Adds a
+  shared `seekTarget` state (`{ ts, nonce }`) threaded into
+  `<VideoPane>` so both findings and clinical-assessment items can
+  trigger a seek via `setSeekTarget(...)`. Header copy updated:
+  "EMS After-Action Review" → "EMS QI Case Review". Adds
+  `reviewerNotes` and `humanReviewed` local state, reset whenever a
+  fresh review loads.
+- `frontend/src/components/VideoPane.tsx` — accepts an optional
+  `seekTarget` prop. A nonce-bumping seek effect runs on every change
+  so the same timestamp can be re-seeked (clicking the same finding
+  twice still rewinds). The existing `selectedFindingId` seek effect
+  is preserved unchanged.
+- `frontend/src/components/CaseSelector.tsx` — prop rename
+  `hasCachedAAR` → `hasCachedReview`; tooltip copy adjusted. No
+  visual change.
+- `frontend/src/components/Skeleton.tsx` — `AARSkeleton` →
+  `ReviewSkeleton` (used by `ReviewPane`).
+
+**Verification — 2026-04-25:**
+
+- `cd frontend && npm run typecheck` → clean (no `any` introduced).
+- `cd frontend && npm run build` → 361.05 kB (112.07 kB gzip), CSS
+  29.67 kB (5.57 kB gzip). Build is clean.
+- Live API smoke through Vite proxy
+  (`http://localhost:5173/api/cases/case_01/review`) → returns full
+  QICaseReview with determination=`performance_concern`, 10 clinical
+  assessment items, 4 findings (with the `utstein_data` block
+  populated) and 4 recommendations.
+- Demo fixture served at `/demo/sample_qi_review.json` → 200.
+- `grep -R 'AARDraft\|aar\\.json\|getAAR\|setAAR\|deleteAAR\|loadDemoAAR\|AARSkeleton\|AARPane' frontend/src` → 0 matches (legacy references fully retired).
+
+**Visual smoke (manual, deferred):** I can't drive a browser from
+this environment so the sections-render check + click-to-seek
+interaction (finding → video seek + PCR highlight; clinical
+assessment item with evidence → video seek) needs a quick manual
+pass. Listed in the smoke-test checklist below.
+
+**Smoke-test checklist (browser):**
+
+1. Load `http://localhost:5173/?demo=1` — verify all 11 sections
+   render. The DeterminationBanner shows amber for
+   `performance_concern`.
+2. Click a Finding card → video seeks to its
+   `evidence_timestamp_seconds`; PCR pane highlights the
+   `pcr_excerpt`.
+3. Click a Clinical Assessment item that has `evidence_event_ids`
+   → video seeks to that event's timestamp.
+4. Click "Sign off" → button toggles to "✓ Signed off" (green).
+5. Edit reviewer notes → controlled state updates without re-render
+   loops.
+6. Trigger Process Case (or "Replay Pipeline" in demo) → progress
+   bar streams 7 stages, then the new review loads.
+
+**Outstanding (post-update):**
+
+- Polish pass on `ReviewPane` (icons, animations, severity-color
+  rails, etc.) — explicitly out of scope per user direction.
+- `CLAUDE.md` and `README.md` still describe the project as building
+  an "AAR"; should be updated in a documentation-only follow-up so
+  external readers don't get confused. Same for older PROGRESS
+  entries (kept as historical record).
+
 ### QI Case Review Update — Step 3: API + cache renames (2026-04-25)
 
 API surface and on-disk cache aligned with the new schema. The

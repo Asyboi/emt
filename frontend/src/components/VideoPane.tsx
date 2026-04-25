@@ -10,6 +10,7 @@ interface VideoPaneProps {
   findings: Finding[];
   selectedFindingId: string | null;
   onSelectFinding: (id: string) => void;
+  seekTarget?: { ts: number; nonce: number } | null;
 }
 
 export function VideoPane({
@@ -17,6 +18,7 @@ export function VideoPane({
   findings,
   selectedFindingId,
   onSelectFinding,
+  seekTarget,
 }: VideoPaneProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [duration, setDuration] = useState(0);
@@ -34,6 +36,15 @@ export function VideoPane({
       // ignore seek errors before metadata loaded
     }
   }, [selectedFindingId, findings, hasVideo]);
+
+  useEffect(() => {
+    if (!seekTarget || !videoRef.current || !hasVideo) return;
+    try {
+      videoRef.current.currentTime = seekTarget.ts;
+    } catch {
+      // ignore seek errors before metadata loaded
+    }
+  }, [seekTarget, hasVideo]);
 
   const fallbackDuration =
     findings.length > 0

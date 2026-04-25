@@ -1,7 +1,18 @@
 {
   "case_id": "case_01",
   "generated_at": "2026-04-24T14:32:08Z",
-  "summary": "65-year-old male with witnessed out-of-hospital cardiac arrest at a residential address. Bystander CPR was initiated by the patient's spouse approximately 90 seconds before EMS arrival. On EMS arrival the patient was pulseless and apneic with an initial rhythm of ventricular fibrillation.\n\nACLS was performed including continuous compressions, two defibrillation attempts at 200J, IV access, and three rounds of epinephrine 1mg IV. Advanced airway was placed via i-gel supraglottic device. Return of spontaneous circulation (ROSC) was achieved at approximately 08:00 from incident start, with a post-ROSC rhythm of normal sinus at 92 bpm and palpable carotid pulse.\n\nPatient was packaged and transported to the regional cardiac receiving center with continuous monitoring. Total scene time was approximately 11 minutes. This review identified one critical timing discrepancy and two concerns warranting QA follow-up; overall ACLS adherence was acceptable but with documented deviations in epinephrine interval and airway timing.",
+  "reviewer_id": "sentinel_agent_v1",
+  "incident_date": "2026-04-24T14:00:00Z",
+  "incident_type": "cardiac_arrest",
+  "responding_unit": "Medic 51",
+  "crew_members": [
+    { "role": "primary_paramedic", "identifier": "P-001" },
+    { "role": "secondary_paramedic", "identifier": "P-002" }
+  ],
+  "patient_age_range": "60-69",
+  "patient_sex": "m",
+  "chief_complaint": "Witnessed cardiac arrest",
+  "incident_summary": "Male patient in the 60-69 age range suffered a witnessed out-of-hospital cardiac arrest at a private residence. Bystander CPR was initiated by the patient's spouse approximately 90 seconds before EMS arrival. On arrival the patient was pulseless and apneic with an initial rhythm of ventricular fibrillation.\n\nMedic 51 (P-001 primary, P-002 secondary) performed ACLS including continuous compressions, two defibrillations at 200J biphasic, IV access, three rounds of epinephrine 1mg IV, and placement of an i-gel supraglottic airway. Return of spontaneous circulation (ROSC) was achieved at approximately eight minutes from incident start, with a post-ROSC rhythm of normal sinus at 92 bpm.\n\nPatient was packaged and transported to the regional cardiac receiving center with continuous monitoring. Total scene time was approximately 11 minutes. This review identified one critical timing discrepancy and two concerns warranting QA follow-up; ACLS adherence was acceptable but with documented deviations in epinephrine interval and airway timing.",
   "timeline": [
     {
       "entry_id": "tle_01_arrival",
@@ -111,6 +122,98 @@
       ]
     }
   ],
+  "clinical_assessment": [
+    {
+      "item_id": "ca_01_scene_arrival",
+      "category": "scene_management",
+      "benchmark": "Arrival to patient contact within 60 seconds of entering scene",
+      "status": "met",
+      "notes": "Body-cam shows kit drop and patient contact within ~30 seconds of front-door entry at 02:03.",
+      "evidence_event_ids": ["evt_a1f3e2b4-vid-arrival", "evt_a1f3e2b4-pcr-arrival"]
+    },
+    {
+      "item_id": "ca_02_initial_rhythm_check",
+      "category": "initial_assessment",
+      "benchmark": "Rhythm identified within 30 seconds of patient contact",
+      "status": "met",
+      "notes": "Pads applied and V-fib confirmed by 02:30; first shock at 04:00 follows established assessment.",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1"]
+    },
+    {
+      "item_id": "ca_03_cpr_initiation",
+      "category": "cpr_quality",
+      "benchmark": "EMS chest compressions started within 10 seconds of confirming arrest",
+      "status": "met",
+      "notes": "Bystander CPR was already in progress; EMS assumed compressions within ~25s of contact (within target).",
+      "evidence_event_ids": ["evt_a1f3e2b4-pcr-arrival", "evt_a1f3e2b4-vid-arrival"]
+    },
+    {
+      "item_id": "ca_04_perishock_pause",
+      "category": "cpr_quality",
+      "benchmark": "Peri-shock pause less than 10 seconds for each defibrillation",
+      "status": "met",
+      "notes": "Body-cam confirms <10s hands-off across both shocks; pads pre-positioned, charge-during-CPR technique used.",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1"]
+    },
+    {
+      "item_id": "ca_05_advanced_airway",
+      "category": "airway_management",
+      "benchmark": "Advanced airway placed within 5 minutes of arrest when feasible",
+      "status": "not_met",
+      "notes": "i-gel placed at 06:30 from incident start (~04:30 post-arrival), 90s past the 5-minute soft target. BVM ventilation effective during the delay.",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1"]
+    },
+    {
+      "item_id": "ca_06_iv_access",
+      "category": "vascular_access",
+      "benchmark": "IV/IO established within first 5 minutes of EMS arrival",
+      "status": "insufficient_documentation",
+      "notes": "Successful 18g antecubital line documented; an unsuccessful EJ attempt visible on body-cam at 03:42 is not documented in the PCR.",
+      "evidence_event_ids": ["evt_b2c4d5e6-vid-defib1"]
+    },
+    {
+      "item_id": "ca_07_epi_interval",
+      "category": "medications",
+      "benchmark": "Epinephrine 1mg IV every 3-5 minutes during cardiac arrest",
+      "status": "not_met",
+      "notes": "Interval between dose 2 and dose 3 was 5 min 50 s per body-cam — exceeds the 3-5 minute window. Dose 1-to-2 interval was within range.",
+      "evidence_event_ids": ["evt_b2c4d5e6-pcr-defib1", "evt_b2c4d5e6-vid-defib1"]
+    },
+    {
+      "item_id": "ca_08_defibrillation_shockable",
+      "category": "defibrillation",
+      "benchmark": "VF/pulseless VT shocked within 2 minutes of identification",
+      "status": "met",
+      "notes": "Both shocks delivered at 200J biphasic with anterior-lateral pad placement immediately following rhythm identification.",
+      "evidence_event_ids": ["evt_b2c4d5e6-pcr-defib1", "evt_b2c4d5e6-vid-defib1"]
+    },
+    {
+      "item_id": "ca_09_continuous_monitoring",
+      "category": "monitoring",
+      "benchmark": "Continuous ECG monitoring with EtCO2 if advanced airway in place",
+      "status": "met",
+      "notes": "Continuous ECG visible on monitor through transport; EtCO2 waveform documented at 28 mmHg post-airway placement.",
+      "evidence_event_ids": ["evt_c3d5e7f8-pcr-rosc"]
+    },
+    {
+      "item_id": "ca_10_handoff",
+      "category": "handoff",
+      "benchmark": "Structured handoff to receiving hospital with full ACLS timeline",
+      "status": "insufficient_documentation",
+      "notes": "PCR references 'verbal report given' but does not record the structured-handoff fields (rhythm history, drug timing, ROSC time) per agency policy.",
+      "evidence_event_ids": ["evt_c3d5e7f8-pcr-rosc"]
+    }
+  ],
+  "documentation_quality": {
+    "completeness_score": 0.78,
+    "accuracy_score": 0.65,
+    "narrative_quality_score": 0.82,
+    "issues": [
+      "First epinephrine dose timestamp in PCR is 30s earlier than body-cam evidence; downstream dose intervals computed from the incorrect anchor.",
+      "Unsuccessful external jugular IV attempt at 03:42 visible on body-cam is not documented in the PCR procedures section.",
+      "Rhythm check at 06:00 charted in PCR is not corroborated by body-cam or dispatch audio and appears to be a reconstruction."
+    ]
+  },
   "findings": [
     {
       "finding_id": "fnd_01_epi_timing",
@@ -220,6 +323,48 @@
     }
   ],
   "adherence_score": 0.72,
-  "narrative": "This after-action review covers a 65-year-old male who suffered a witnessed out-of-hospital cardiac arrest at a private residence. Bystander CPR was initiated by his spouse approximately 90 seconds before EMS arrival, contributing to the favorable rhythm presentation (ventricular fibrillation rather than asystole) and ultimately to ROSC at 08:00 from incident start. EMS performance was, on balance, consistent with current ACLS guidelines, with high-quality compressions, prompt defibrillation, and effective post-ROSC stabilization.\n\nThree concerns were identified during reconciliation of the PCR with body-cam and dispatch audio. The most significant is a 30-second discrepancy between the documented and observed time of first epinephrine administration (see fnd_01_epi_timing). Because subsequent doses are charted relative to the first, this error propagates through the medication timeline; the QA team should reconcile the medication record against the body-cam clock before this PCR is finalized. A second concern (fnd_03_phantom_rhythm_check) involves a rhythm check documented at 06:00 that does not appear in either the video or radio audio record — likely a reconstruction during charting rather than an actual interruption of compressions.\n\nThe third concern (fnd_02_iv_undocumented) is an unsuccessful external jugular IV attempt visible on body-cam at 03:42 that is absent from the PCR. While the procedure failed and a subsequent antecubital line was placed successfully, agency policy requires documentation of all procedures including unsuccessful attempts. A fourth, lower-severity finding (fnd_04_advanced_airway_late) flags that advanced airway placement occurred at 06:30, 90 seconds beyond the 5-minute soft target; BVM ventilation during the delay was effective and the deviation is clinically defensible.\n\nOverall ACLS adherence is scored at 0.72. Five protocol checks were performed: three adherent (CPR initiation timing, rhythm-check interval, defibrillation for shockable rhythm) and two deviations (epinephrine interval slipping past 5 minutes between dose 2 and 3; advanced airway placement marginally delayed). Recommended QA actions are documented per finding above. ROSC was sustained through transport and the patient was transferred to the cardiac receiving center in stable condition.",
-  "reviewer_notes": ""
+  "utstein_data": {
+    "witnessed": true,
+    "bystander_cpr": true,
+    "initial_rhythm": "vf",
+    "time_to_cpr_seconds": 180.0,
+    "time_to_first_defib_seconds": 420.0,
+    "rosc_achieved": true,
+    "time_to_rosc_seconds": 720.0,
+    "disposition": "transferred_with_rosc"
+  },
+  "recommendations": [
+    {
+      "recommendation_id": "rec_01_crew_med_timing",
+      "audience": "crew",
+      "priority": "required",
+      "description": "Crew P-001 and P-002 should chart medication timestamps directly from the monitor or body-cam clock rather than reconstructing them post-event. Discrepant epinephrine timing in this case propagated through subsequent dose intervals.",
+      "related_finding_ids": ["fnd_01_epi_timing"]
+    },
+    {
+      "recommendation_id": "rec_02_crew_doc_unsuccessful",
+      "audience": "crew",
+      "priority": "suggested",
+      "description": "Document all attempted procedures including unsuccessful ones (e.g. the EJ IV attempt at 03:42). Include indication, technique, and outcome per agency policy.",
+      "related_finding_ids": ["fnd_02_iv_undocumented"]
+    },
+    {
+      "recommendation_id": "rec_03_agency_charting_template",
+      "audience": "agency",
+      "priority": "suggested",
+      "description": "Add a structured-handoff field set to the standard PCR template (rhythm history, drug timing, ROSC time) to reduce reliance on free-text narrative for ACLS handoff information.",
+      "related_finding_ids": ["fnd_03_phantom_rhythm_check"]
+    },
+    {
+      "recommendation_id": "rec_04_followup_peer_review",
+      "audience": "follow_up",
+      "priority": "informational",
+      "description": "Schedule a peer review session with Medic 51 crew to discuss the medication-timing discrepancy and BVM-vs-advanced-airway decision rationale. Non-punitive, learning-oriented per Just Culture principles.",
+      "related_finding_ids": ["fnd_01_epi_timing", "fnd_04_advanced_airway_late"]
+    }
+  ],
+  "determination": "performance_concern",
+  "determination_rationale": "Determination is performance_concern because the case includes one critical timing-discrepancy finding (fnd_01_epi_timing) that propagates through downstream medication intervals, plus two NOT_MET clinical assessment items (advanced airway timing and epinephrine interval). ROSC was achieved and patient outcome was favorable, but the documentation inaccuracy and protocol deviations warrant crew-level coaching and an updated PCR before submission.",
+  "reviewer_notes": "",
+  "human_reviewed": false
 }

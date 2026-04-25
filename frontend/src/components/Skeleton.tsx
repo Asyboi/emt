@@ -15,7 +15,7 @@ export function Skeleton({ className }: SkeletonProps) {
   );
 }
 
-export function AARSkeleton() {
+export function ReviewSkeleton() {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       <div className="p-4 space-y-4">

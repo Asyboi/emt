@@ -1,18 +1,18 @@
 import { Activity } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { AARPane } from "@/components/AARPane";
 import { CaseSelector } from "@/components/CaseSelector";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PCRPane } from "@/components/PCRPane";
 import { PipelineProgressBar } from "@/components/PipelineProgress";
+import { ReviewPane } from "@/components/ReviewPane";
 import { VideoPane } from "@/components/VideoPane";
 import { useCase } from "@/hooks/useCase";
 import { usePCR } from "@/hooks/usePCR";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
-import { deleteAAR, getCases, getVideoUrl } from "@/lib/api";
+import { deleteReview, getCases, getVideoUrl } from "@/lib/api";
 import { demoCases, isDemoMode } from "@/lib/demo";
-import type { AARDraft, Case } from "@/types/schemas";
+import type { Case, QICaseReview } from "@/types/schemas";
 
 export default function App() {
   const [demoMode] = useState(isDemoMode);
@@ -22,20 +22,22 @@ export default function App() {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [progressVisible, setProgressVisible] = useState(false);
+  const [seekTarget, setSeekTarget] = useState<{ ts: number; nonce: number } | null>(null);
+  const [reviewerNotes, setReviewerNotes] = useState("");
+  const [humanReviewed, setHumanReviewed] = useState(false);
   const progressHideTimer = useRef<number | null>(null);
 
-  const { aar, loading: aarLoading, error: caseError, setAAR, reload: reloadCase } =
+  const { review, loading: reviewLoading, error: caseError, setReview, reload: reloadCase } =
     useCase(selectedCaseId, demoMode);
   const { content: pcrContent, loading: pcrLoading } = usePCR(selectedCaseId, demoMode);
 
   const handleStreamComplete = useCallback(
-    (next: AARDraft) => {
-      setAAR(next);
+    (next: QICaseReview) => {
+      setReview(next);
       if (progressHideTimer.current) window.clearTimeout(progressHideTimer.current);
-      // Keep progress bar visible briefly so users see the green ticks.
       progressHideTimer.current = window.setTimeout(() => setProgressVisible(false), 1500);
     },
-    [setAAR],
+    [setReview],
   );
 
   const { stages, isStreaming, error: streamError, start, reset } = usePipelineStream(
@@ -73,9 +75,16 @@ export default function App() {
 
   useEffect(() => {
     setSelectedFindingId(null);
+    setSeekTarget(null);
     reset();
     setProgressVisible(false);
   }, [selectedCaseId, reset]);
+
+  // Reset reviewer notes when the loaded review changes.
+  useEffect(() => {
+    setReviewerNotes(review?.reviewer_notes ?? "");
+    setHumanReviewed(review?.human_reviewed ?? false);
+  }, [review?.case_id, review?.generated_at]);
 
   useEffect(
     () => () => {
@@ -94,20 +103,24 @@ export default function App() {
     if (!selectedCaseId) return;
     if (!demoMode) {
       try {
-        await deleteAAR(selectedCaseId);
+        await deleteReview(selectedCaseId);
       } catch {
         // ignore — proceed with re-run regardless
       }
-      setAAR(null);
+      setReview(null);
       reloadCase();
     }
     setProgressVisible(true);
     start(selectedCaseId, { demo: demoMode });
-  }, [selectedCaseId, demoMode, setAAR, reloadCase, start]);
+  }, [selectedCaseId, demoMode, setReview, reloadCase, start]);
+
+  const handleSeekToTimestamp = useCallback((seconds: number) => {
+    setSeekTarget({ ts: seconds, nonce: Date.now() });
+  }, []);
 
   const selectedFinding = useMemo(
-    () => aar?.findings.find((f) => f.finding_id === selectedFindingId) ?? null,
-    [aar, selectedFindingId],
+    () => review?.findings.find((f) => f.finding_id === selectedFindingId) ?? null,
+    [review, selectedFindingId],
   );
 
   const videoUrl = selectedCaseId ? getVideoUrl(selectedCaseId) : null;
@@ -119,9 +132,7 @@ export default function App() {
         <div className="flex items-center gap-2">
           <Activity className="h-5 w-5 text-blue-600" />
           <span className="font-semibold text-gray-900">Sentinel</span>
-          <span className="text-xs text-gray-500 ml-1">
-            EMS After-Action Review
-          </span>
+          <span className="text-xs text-gray-500 ml-1">EMS QI Case Review</span>
         </div>
         <CaseSelector
           cases={cases}
@@ -131,7 +142,7 @@ export default function App() {
           onReset={handleReset}
           isProcessing={isStreaming}
           demoMode={demoMode}
-          hasCachedAAR={aar !== null}
+          hasCachedReview={review !== null}
         />
       </header>
 
@@ -145,18 +156,24 @@ export default function App() {
         <section className="min-h-0 overflow-hidden">
           <VideoPane
             videoUrl={videoUrl}
-            findings={aar?.findings ?? []}
+            findings={review?.findings ?? []}
             selectedFindingId={selectedFindingId}
             onSelectFinding={setSelectedFindingId}
+            seekTarget={seekTarget}
           />
         </section>
         <section className="min-h-0 overflow-hidden">
-          <ErrorBoundary label="AAR pane">
-            <AARPane
-              aar={aar}
-              loading={aarLoading || casesLoading}
+          <ErrorBoundary label="Review pane">
+            <ReviewPane
+              review={review}
+              loading={reviewLoading || casesLoading}
               selectedFindingId={selectedFindingId}
               onSelectFinding={setSelectedFindingId}
+              onSeekToTimestamp={handleSeekToTimestamp}
+              reviewerNotes={reviewerNotes}
+              onReviewerNotesChange={setReviewerNotes}
+              humanReviewed={humanReviewed}
+              onToggleHumanReviewed={() => setHumanReviewed((v) => !v)}
             />
           </ErrorBoundary>
         </section>
