@@ -1,43 +1,25 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Search } from 'lucide-react';
-
-interface SavedReport {
-  id: string;
-  date: string;
-  crew: string;
-  status: 'finalized' | 'draft';
-}
+import { useIncidentList } from '../../data/hooks';
 
 export function Archive() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const { data: reports, loading, error } = useIncidentList();
 
-  const reports: SavedReport[] = [
-    { id: 'INC-2026-04-0231', date: '2026-04-12', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'finalized' },
-    { id: 'INC-2026-04-0228', date: '2026-04-11', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
-    { id: 'INC-2026-04-0224', date: '2026-04-10', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'draft' },
-    { id: 'INC-2026-04-0219', date: '2026-04-09', crew: 'M-5 / MARTINEZ, PATEL', status: 'finalized' },
-    { id: 'INC-2026-04-0215', date: '2026-04-08', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
-    { id: 'INC-2026-04-0211', date: '2026-04-07', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'finalized' },
-    { id: 'INC-2026-04-0207', date: '2026-04-06', crew: 'M-4 / THOMPSON, LEE', status: 'finalized' },
-    { id: 'INC-2026-04-0203', date: '2026-04-05', crew: 'M-5 / MARTINEZ, PATEL', status: 'draft' },
-    { id: 'INC-2026-04-0198', date: '2026-04-04', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
-    { id: 'INC-2026-04-0194', date: '2026-04-03', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'finalized' },
-  ];
-
-  const filteredReports = reports.filter(
+  const filteredReports = (reports ?? []).filter(
     (r) =>
       r.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.date.includes(searchQuery) ||
       r.crew.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleReportClick = (report: SavedReport) => {
-    if (report.status === 'draft') {
-      navigate(`/review/${report.id}`);
+  const handleReportClick = (id: string, status: 'finalized' | 'draft') => {
+    if (status === 'draft') {
+      navigate(`/review/${id}`);
     } else {
-      navigate(`/finalize/${report.id}`);
+      navigate(`/finalize/${id}`);
     }
   };
 
@@ -88,7 +70,7 @@ export function Archive() {
             {filteredReports.map((report) => (
               <button
                 key={report.id}
-                onClick={() => handleReportClick(report)}
+                onClick={() => handleReportClick(report.id, report.status)}
                 className="w-full grid grid-cols-[200px_150px_1fr_120px] gap-4 px-6 py-4 border-b border-border hover:bg-background transition-colors text-left"
               >
                 <div className="text-sm" style={{ fontFamily: 'var(--font-mono)' }}>
@@ -116,7 +98,19 @@ export function Archive() {
             ))}
           </div>
 
-          {filteredReports.length === 0 && (
+          {loading && (
+            <div className="px-6 py-12 text-center text-sm text-foreground-secondary">
+              Loading…
+            </div>
+          )}
+
+          {error && !loading && (
+            <div className="px-6 py-12 text-center text-sm text-destructive">
+              Failed to load reports: {error.message}
+            </div>
+          )}
+
+          {!loading && !error && filteredReports.length === 0 && (
             <div className="px-6 py-12 text-center text-sm text-foreground-secondary">
               No reports found matching your search.
             </div>

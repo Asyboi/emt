@@ -1,117 +1,70 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useIncident } from '../../data/hooks';
+import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
+import type { ReportSection, SectionStatus } from '../../types';
 
-type SectionStatus = 'approved' | 'pending' | 'needs-revision' | 'regenerating';
-
-interface Section {
-  id: number;
-  title: string;
-  status: SectionStatus;
-  preview: string;
-  fullContent: string;
-  feedback?: string;
-  edits?: number;
-}
+const QUICK_TAGS = [
+  'MISSING DETAIL',
+  'INCORRECT TIMELINE',
+  'PROTOCOL MISCITED',
+  'TONE / WORDING',
+];
 
 export function Finalize() {
   const { incidentId } = useParams();
   const navigate = useNavigate();
+  const resolvedId = incidentId ?? PRIMARY_MOCK_INCIDENT_ID;
+  const { data: incident, loading, error } = useIncident(resolvedId);
+
   const [showDiff, setShowDiff] = useState(false);
   const [expandedSection, setExpandedSection] = useState<number | null>(null);
-  const [revisionSection, setRevisionSection] = useState<number | null>(5);
-  const [feedbackText, setFeedbackText] = useState('Epinephrine timing doesn\'t match CAD timestamp — verify against unit M-7 dispatch log');
-  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set(['INCORRECT TIMELINE']));
+  const [revisionSection, setRevisionSection] = useState<number | null>(null);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
 
-  const [sections, setSections] = useState<Section[]>([
-    {
-      id: 1,
-      title: 'INCIDENT SUMMARY',
-      status: 'approved',
-      preview: 'OHCA arrest of 67-year-old male at residential address. Initial rhythm VF, converted to NSR after single defibrillation...',
-      fullContent: 'OHCA arrest of 67-year-old male at residential address. Initial rhythm VF, converted to NSR after single defibrillation at 200J. ROSC achieved at 14:38, 6 minutes post-arrest.',
-      edits: 3,
-    },
-    {
-      id: 2,
-      title: 'TIMELINE RECONSTRUCTION',
-      status: 'approved',
-      preview: '14:32 — Dispatch received for cardiac arrest at 1247 Maple Ave. 14:33 — Unit M-7 en route. 14:36 — Arrival on scene...',
-      fullContent: '14:32 — Dispatch received for cardiac arrest at 1247 Maple Ave. 14:33 — Unit M-7 en route. 14:36 — Arrival on scene. Initial assessment shows unresponsive male, no pulse, no respirations.',
-      edits: 1,
-    },
-    {
-      id: 3,
-      title: 'PCR DOCUMENTATION CHECK',
-      status: 'approved',
-      preview: 'All required PCR fields completed. Patient demographics verified. Chief complaint documented as cardiac arrest...',
-      fullContent: 'All required PCR fields completed. Patient demographics verified. Chief complaint documented as cardiac arrest. Vital signs documented at appropriate intervals.',
-    },
-    {
-      id: 4,
-      title: 'PROTOCOL COMPLIANCE REVIEW',
-      status: 'approved',
-      preview: 'Crew followed ACLS cardiac arrest protocol. Defibrillation delivered within appropriate timeframe. Medication administration...',
-      fullContent: 'Crew followed ACLS cardiac arrest protocol. Defibrillation delivered within appropriate timeframe. Medication administration documented per protocol.',
-      edits: 2,
-    },
-    {
-      id: 5,
-      title: 'KEY CLINICAL DECISIONS',
-      status: 'needs-revision',
-      preview: 'Decision to administer epinephrine at 14:37 appropriate given patient presentation. Single defibrillation strategy...',
-      fullContent: 'Decision to administer epinephrine at 14:37 appropriate given patient presentation. Single defibrillation strategy effective in achieving ROSC.',
-      feedback: 'Epinephrine timing doesn\'t match CAD timestamp — verify against unit M-7 dispatch log',
-    },
-    {
-      id: 6,
-      title: 'COMMUNICATION / SCENE MANAGEMENT',
-      status: 'approved',
-      preview: 'Effective crew coordination evident. Clear role assignment. Communication with dispatch maintained throughout...',
-      fullContent: 'Effective crew coordination evident. Clear role assignment. Communication with dispatch maintained throughout incident.',
-    },
-    {
-      id: 7,
-      title: 'STRENGTHS',
-      status: 'approved',
-      preview: 'Rapid response time (4 minutes from dispatch to on-scene). Immediate initiation of high-quality CPR. Appropriate rhythm...',
-      fullContent: 'Rapid response time (4 minutes from dispatch to on-scene). Immediate initiation of high-quality CPR. Appropriate rhythm recognition and defibrillation.',
-      edits: 1,
-    },
-    {
-      id: 8,
-      title: 'AREAS FOR IMPROVEMENT',
-      status: 'regenerating',
-      preview: 'Documentation of initial rhythm interpretation could be more detailed. Consider earlier notification to receiving facility...',
-      fullContent: 'Documentation of initial rhythm interpretation could be more detailed. Consider earlier notification to receiving facility.',
-    },
-    {
-      id: 9,
-      title: 'RECOMMENDED FOLLOW-UP',
-      status: 'pending',
-      preview: 'Recommend crew debrief within 48 hours. Consider case review at next QI meeting. Follow up on patient outcome...',
-      fullContent: 'Recommend crew debrief within 48 hours. Consider case review at next QI meeting. Follow up on patient outcome with receiving facility.',
-    },
-  ]);
-
-  const approvedCount = sections.filter(s => s.status === 'approved').length;
-  const pendingCount = sections.filter(s => s.status === 'pending').length;
-  const needsRevisionCount = sections.filter(s => s.status === 'needs-revision').length;
-  const progress = (approvedCount / sections.length) * 100;
-  const allApproved = approvedCount === sections.length;
+  const [sections, setSections] = useState<ReportSection[]>([]);
 
   useEffect(() => {
-    const regeneratingSection = sections.find(s => s.status === 'regenerating');
-    if (regeneratingSection) {
-      const timer = setTimeout(() => {
-        setSections(sections.map(s =>
-          s.id === regeneratingSection.id
-            ? { ...s, status: 'approved', preview: 'Updated content with verified timestamps and protocol references...', fullContent: 'Updated content with verified timestamps and protocol references from cross-referenced sources.' }
-            : s
-        ));
-      }, 4000);
-      return () => clearTimeout(timer);
+    if (incident) {
+      setSections(incident.sections.map((s) => ({ ...s })));
+      const needsRevision = incident.sections.find((s) => s.status === 'needs-revision');
+      if (needsRevision) {
+        setRevisionSection(needsRevision.id);
+        setFeedbackText(needsRevision.feedback ?? '');
+        setSelectedTags(new Set(needsRevision.feedback ? ['INCORRECT TIMELINE'] : []));
+      }
     }
+  }, [incident]);
+
+  const approvedCount = sections.filter((s) => s.status === 'approved').length;
+  const pendingCount = sections.filter((s) => s.status === 'pending').length;
+  const needsRevisionCount = sections.filter((s) => s.status === 'needs-revision').length;
+  const total = sections.length || 1;
+  const progress = (approvedCount / total) * 100;
+  const allApproved = sections.length > 0 && approvedCount === sections.length;
+
+  // Auto-resolve any 'regenerating' section after 4s — preserves the old UI demo behavior.
+  useEffect(() => {
+    const regenerating = sections.find((s) => s.status === 'regenerating');
+    if (!regenerating) return;
+    const timer = setTimeout(() => {
+      setSections((current) =>
+        current.map((s) =>
+          s.id === regenerating.id
+            ? {
+                ...s,
+                status: 'approved',
+                preview: 'Updated content with verified timestamps and protocol references...',
+                content:
+                  'Updated content with verified timestamps and protocol references from cross-referenced sources.',
+              }
+            : s
+        )
+      );
+    }, 4000);
+    return () => clearTimeout(timer);
   }, [sections]);
 
   const toggleExpand = (id: number) => {
@@ -119,11 +72,11 @@ export function Finalize() {
   };
 
   const approveSection = (id: number) => {
-    setSections(sections.map(s => s.id === id ? { ...s, status: 'approved' } : s));
+    setSections(sections.map((s) => (s.id === id ? { ...s, status: 'approved' } : s)));
   };
 
   const undoApproval = (id: number) => {
-    setSections(sections.map(s => s.id === id ? { ...s, status: 'pending' } : s));
+    setSections(sections.map((s) => (s.id === id ? { ...s, status: 'pending' } : s)));
   };
 
   const requestRevision = (id: number) => {
@@ -139,45 +92,72 @@ export function Finalize() {
   };
 
   const submitRevision = (id: number) => {
-    setSections(sections.map(s =>
-      s.id === id ? { ...s, status: 'regenerating', feedback: feedbackText } : s
-    ));
+    setSections(
+      sections.map((s) => (s.id === id ? { ...s, status: 'regenerating', feedback: feedbackText } : s))
+    );
     setRevisionSection(null);
     setFeedbackText('');
     setSelectedTags(new Set());
   };
 
   const toggleTag = (tag: string) => {
-    setSelectedTags(prev => {
+    setSelectedTags((prev) => {
       const next = new Set(prev);
-      if (next.has(tag)) {
-        next.delete(tag);
-      } else {
-        next.add(tag);
-      }
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
       return next;
     });
 
     const tagText = tag.toLowerCase().replace(/_/g, ' ');
     if (!feedbackText.toLowerCase().includes(tagText)) {
-      setFeedbackText(prev => prev ? `${prev}\n[${tag}]` : `[${tag}]`);
+      setFeedbackText((prev) => (prev ? `${prev}\n[${tag}]` : `[${tag}]`));
     }
   };
 
   const getStatusTag = (status: SectionStatus) => {
     switch (status) {
       case 'approved':
-        return <span className="text-success bg-success/10 px-2 py-1 border border-success/20 text-[10px]">[APPROVED]</span>;
+        return (
+          <span className="text-success bg-success/10 px-2 py-1 border border-success/20 text-[10px]">
+            [APPROVED]
+          </span>
+        );
       case 'pending':
-        return <span className="text-foreground-secondary bg-surface px-2 py-1 border border-border text-[10px]">[PENDING]</span>;
+        return (
+          <span className="text-foreground-secondary bg-surface px-2 py-1 border border-border text-[10px]">
+            [PENDING]
+          </span>
+        );
       case 'needs-revision':
-        return <span className="text-primary bg-primary/10 px-2 py-1 border border-primary/20 text-[10px]">[NEEDS REVISION]</span>;
+        return (
+          <span className="text-primary bg-primary/10 px-2 py-1 border border-primary/20 text-[10px]">
+            [NEEDS REVISION]
+          </span>
+        );
       case 'regenerating':
-        return <span className="text-primary bg-primary/10 px-2 py-1 border border-primary/20 text-[10px] animate-pulse">[REGENERATING...]</span>;
+        return (
+          <span className="text-primary bg-primary/10 px-2 py-1 border border-primary/20 text-[10px] animate-pulse">
+            [REGENERATING...]
+          </span>
+        );
+      default:
+        return (
+          <span className="text-foreground-secondary bg-surface px-2 py-1 border border-border text-[10px]">
+            [DRAFT]
+          </span>
+        );
     }
   };
 
-  const quickTags = ['MISSING DETAIL', 'INCORRECT TIMELINE', 'PROTOCOL MISCITED', 'TONE / WORDING'];
+  if (loading || !incident) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
+          {error ? `Error: ${error.message}` : 'Loading incident…'}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -189,12 +169,14 @@ export function Finalize() {
               FINALIZE REPORT
             </h1>
             <div className="text-sm" style={{ fontFamily: 'var(--font-mono)' }}>
-              {incidentId || 'INC-2026-04-0231'} / 2026-04-12
+              {incident.id} / {incident.date}
             </div>
           </div>
           <div className="text-right">
             <div className="text-xs mb-2" style={{ fontFamily: 'var(--font-mono)' }}>
-              <span className="text-success">APPROVED: {approvedCount}/9</span>
+              <span className="text-success">
+                APPROVED: {approvedCount}/{sections.length}
+              </span>
               <span className="text-foreground-secondary mx-2">|</span>
               <span className="text-foreground-secondary">PENDING: {pendingCount}</span>
               <span className="text-foreground-secondary mx-2">|</span>
@@ -207,7 +189,9 @@ export function Finalize() {
                 onChange={(e) => setShowDiff(e.target.checked)}
                 className="w-3 h-3"
               />
-              <span className="tracking-wide" style={{ fontFamily: 'var(--font-mono)' }}>SHOW DIFF FROM AI DRAFT</span>
+              <span className="tracking-wide" style={{ fontFamily: 'var(--font-mono)' }}>
+                SHOW DIFF FROM AI DRAFT
+              </span>
             </label>
           </div>
         </div>
@@ -235,9 +219,7 @@ export function Finalize() {
                     <h3 className="text-xs tracking-[0.12em] text-foreground">
                       {String(section.id).padStart(2, '0')} / {section.title}
                     </h3>
-                    <span style={{ fontFamily: 'var(--font-mono)' }}>
-                      {getStatusTag(section.status)}
-                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono)' }}>{getStatusTag(section.status)}</span>
                     {showDiff && section.edits && section.status === 'approved' && (
                       <span
                         className="text-[10px] text-foreground-secondary px-2 py-0.5 border border-border"
@@ -248,7 +230,7 @@ export function Finalize() {
                     )}
                   </div>
                   <p className="text-sm text-foreground-secondary leading-relaxed mb-2">
-                    {isExpanded ? section.fullContent : section.preview}
+                    {isExpanded ? section.content : section.preview}
                   </p>
                   <button
                     onClick={() => toggleExpand(section.id)}
@@ -269,7 +251,10 @@ export function Finalize() {
                   </button>
 
                   {section.status === 'regenerating' && (
-                    <div className="mt-3 text-xs text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
+                    <div
+                      className="mt-3 text-xs text-foreground-secondary"
+                      style={{ fontFamily: 'var(--font-mono)' }}
+                    >
                       <span className="animate-pulse">[..]</span> Agent re-cross-referencing CAD log and PCR narrative...
                     </div>
                   )}
@@ -277,7 +262,7 @@ export function Finalize() {
 
                 {/* Right side - Actions */}
                 <div className="flex flex-col gap-2 items-end">
-                  {section.status === 'pending' && (
+                  {(section.status === 'pending' || section.status === 'draft') && (
                     <>
                       <button
                         onClick={() => approveSection(section.id)}
@@ -310,7 +295,10 @@ export function Finalize() {
                       >
                         REGENERATE
                       </button>
-                      <div className="text-[10px] text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
+                      <div
+                        className="text-[10px] text-foreground-secondary"
+                        style={{ fontFamily: 'var(--font-mono)' }}
+                      >
                         Feedback submitted
                         <button
                           onClick={() => setRevisionSection(section.id)}
@@ -338,7 +326,7 @@ export function Finalize() {
                     style={{ fontFamily: 'var(--font-mono)' }}
                   />
                   <div className="flex flex-wrap gap-2 mb-4">
-                    {quickTags.map((tag) => (
+                    {QUICK_TAGS.map((tag) => (
                       <button
                         key={tag}
                         onClick={() => toggleTag(tag)}
@@ -381,7 +369,7 @@ export function Finalize() {
         </p>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate(`/review/${incidentId}`)}
+            onClick={() => navigate(`/review/${incident.id}`)}
             className="px-6 py-2.5 border border-border text-sm tracking-wide hover:bg-background transition-colors"
           >
             BACK TO REVIEW
