@@ -2,6 +2,15 @@
 // These describe the shape the UI consumes; remote mode will adapt the backend
 // QICaseReview into these shapes.
 
+import type {
+  ClinicalAssessmentItem,
+  DocumentationQualityAssessment,
+  Finding,
+  ProtocolCheck,
+  Recommendation,
+  TimelineEntry,
+} from './types/backend';
+
 export type SectionStatus =
   | 'draft'
   | 'edited'
@@ -9,6 +18,19 @@ export type SectionStatus =
   | 'approved'
   | 'needs-revision'
   | 'regenerating';
+
+// Structured payload for a report section. When present, the section renderer
+// uses a purpose-built view; when absent, the renderer falls back to the flat
+// `content` string. Mock data omits `data`; live data attached by adapters.ts.
+export type SectionData =
+  | { kind: 'incident-summary'; text: string }
+  | { kind: 'timeline'; entries: TimelineEntry[] }
+  | { kind: 'doc-quality'; quality: DocumentationQualityAssessment }
+  | { kind: 'protocol-checks'; checks: ProtocolCheck[] }
+  | { kind: 'clinical-assessment'; items: ClinicalAssessmentItem[] }
+  | { kind: 'strengths'; items: ClinicalAssessmentItem[] }
+  | { kind: 'findings'; findings: Finding[] }
+  | { kind: 'recommendations'; recs: Recommendation[] };
 
 export type AgentStatus = 'complete' | 'active' | 'waiting';
 
@@ -29,6 +51,7 @@ export interface ReportSection {
   citations: number[];
   edits?: number;
   feedback?: string;
+  data?: SectionData;
 }
 
 export interface TimelineEvent {

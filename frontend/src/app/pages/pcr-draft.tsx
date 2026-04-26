@@ -13,12 +13,12 @@ import {
 import { PCR_BLANK_TEMPLATE } from '../../lib/pcr-template';
 import type { PCRDraft } from '../../types/backend';
 
-// ── Design tokens (mirror processing.tsx) ────────────────────────────────────
-const C_SUCCESS = '#3D5A3D';
-const C_PRIMARY = '#B8732E';
-const C_BORDER = '#D9D7D0';
-const C_MUTED = '#9A9890';
-const C_HIGHLIGHT = 'rgba(184, 115, 46, 0.18)'; // amber overlay for [UNCONFIRMED]
+// ── Design tokens (resolved from theme.css :root) ────────────────────────────
+const C_SUCCESS = 'var(--success)';
+const C_PRIMARY = 'var(--primary)';
+const C_BORDER = 'var(--border)';
+const C_MUTED = 'var(--text-2)';
+const C_HIGHLIGHT = 'color-mix(in srgb, var(--primary) 18%, transparent)';
 
 const POST_CONFIRM_REDIRECT_MS = 2400;
 const GENERATING_STAGE_MS = 1800;
@@ -154,7 +154,7 @@ function HighlightedEditor({ value, onChange, textareaRef }: EditorProps) {
   };
 
   return (
-    <div className="relative w-full h-full" style={{ background: '#FAF9F5' }}>
+    <div className="relative w-full h-full" style={{ background: 'var(--surface)' }}>
       <div
         ref={backRef}
         aria-hidden="true"
@@ -175,7 +175,7 @@ function HighlightedEditor({ value, onChange, textareaRef }: EditorProps) {
         style={{
           ...sharedTextStyle,
           background: 'transparent',
-          color: '#1A1A1A',
+          color: 'var(--text)',
         }}
       />
     </div>
@@ -256,7 +256,7 @@ function GeneratingState({ caseId }: { caseId: string }) {
                     key={s.label}
                     className="flex items-center justify-between px-3 py-2 rounded-sm"
                     style={{
-                      background: '#FAF9F5',
+                      background: 'var(--surface)',
                       border: `1px solid ${C_BORDER}`,
                       borderLeft: `3px solid ${accent}`,
                     }}
@@ -266,7 +266,7 @@ function GeneratingState({ caseId }: { caseId: string }) {
                         fontFamily: FONT_MONO,
                         fontSize: 12,
                         letterSpacing: '0.06em',
-                        color: '#1A1A1A',
+                        color: 'var(--text)',
                       }}
                     >
                       {s.label}
@@ -356,12 +356,13 @@ function ErrorState({
         <div className="w-full max-w-[560px] bg-surface border border-border p-8">
           <div className="flex items-start gap-3 mb-6">
             <AlertTriangle
-              style={{ width: 20, height: 20, color: '#9B2C2C', flexShrink: 0, marginTop: 2 }}
+              aria-hidden
+              style={{ width: 20, height: 20, color: 'var(--destructive)', flexShrink: 0, marginTop: 2 }}
             />
             <div>
               <h2
                 className="text-xs tracking-[0.15em] mb-2"
-                style={{ fontFamily: 'var(--font-sans)', color: '#9B2C2C' }}
+                style={{ fontFamily: 'var(--font-sans)', color: 'var(--destructive)' }}
               >
                 PCR DRAFT GENERATION FAILED
               </h2>
@@ -513,7 +514,7 @@ function EditorState({
           {isDemo && (
             <span
               className="ml-2 px-2 py-0.5 border border-border text-[10px] tracking-wider"
-              style={{ background: '#FAF9F5', color: C_MUTED }}
+              style={{ background: 'var(--surface)', color: C_MUTED }}
             >
               DEMO
             </span>
@@ -542,9 +543,9 @@ function EditorState({
               className="px-2 py-1 text-[10px] tracking-wider rounded-sm"
               style={{
                 fontFamily: FONT_MONO,
-                background: unconfirmedNow > 0 ? 'rgba(184,115,46,0.10)' : 'rgba(61,90,61,0.10)',
+                background: unconfirmedNow > 0 ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : 'color-mix(in srgb, var(--success) 10%, transparent)',
                 color: unconfirmedNow > 0 ? C_PRIMARY : C_SUCCESS,
-                border: `1px solid ${unconfirmedNow > 0 ? 'rgba(184,115,46,0.28)' : 'rgba(61,90,61,0.28)'}`,
+                border: `1px solid ${unconfirmedNow > 0 ? 'color-mix(in srgb, var(--primary) 28%, transparent)' : 'color-mix(in srgb, var(--success) 28%, transparent)'}`,
               }}
             >
               {unconfirmedNow} UNCONFIRMED
@@ -553,7 +554,7 @@ function EditorState({
 
           <div
             className="mx-6 mb-4 border border-border flex-1 min-h-[480px]"
-            style={{ background: '#FAF9F5' }}
+            style={{ background: 'var(--surface)' }}
           >
             <HighlightedEditor value={text} onChange={setText} textareaRef={taRef} />
           </div>
@@ -607,7 +608,7 @@ function EditorState({
             <p className="text-[11px] leading-relaxed text-foreground-secondary">
               <span
                 className="px-1 rounded-sm"
-                style={{ background: C_HIGHLIGHT, color: '#7A4C1F' }}
+                style={{ background: C_HIGHLIGHT, color: 'var(--primary-strong)' }}
               >
                 [UNCONFIRMED]
               </span>{' '}
@@ -630,7 +631,7 @@ function EditorState({
                     type="button"
                     onClick={() => scrollToSection(s.startLine)}
                     className="w-full text-left px-2 py-1.5 text-[11px] tracking-wide hover:bg-background transition-colors"
-                    style={{ fontFamily: FONT_MONO, color: '#1A1A1A' }}
+                    style={{ fontFamily: FONT_MONO, color: 'var(--text)' }}
                   >
                     {s.header}
                   </button>
@@ -669,7 +670,7 @@ function EditorState({
           {errorBanner && (
             <div
               className="text-[11px]"
-              style={{ fontFamily: FONT_MONO, color: '#9B2C2C' }}
+              style={{ fontFamily: FONT_MONO, color: 'var(--destructive)' }}
             >
               {errorBanner}
             </div>

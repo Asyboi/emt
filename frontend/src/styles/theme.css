@@ -7,12 +7,14 @@
 
   --background: #F5F4F0;
   --surface: #FAF9F5;
+  --subcard: #EDECE8;
   --foreground: #1A1A1A;
   --foreground-secondary: #6B6B68;
   --border: #D9D7D0;
-  --primary: #B8732E;
+  --primary: #70C1FF;
   --primary-foreground: #FAF9F5;
-  --destructive: #8B2E1F;
+  --primary-strong: #1E5C8A;
+  --destructive: #B33A3A;
   --destructive-foreground: #FAF9F5;
   --success: #3D5A3D;
   --success-foreground: #FAF9F5;
@@ -25,29 +27,36 @@
   --secondary-foreground: #1A1A1A;
   --muted: #F5F4F0;
   --muted-foreground: #6B6B68;
-  --accent: #B8732E;
+  --accent: #70C1FF;
   --accent-foreground: #FAF9F5;
   --input: transparent;
   --input-background: #FAF9F5;
   --switch-background: #D9D7D0;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #B8732E;
+  --ring: #70C1FF;
   --radius: 0.25rem;
 
-  --chart-1: #B8732E;
+  --chart-1: #70C1FF;
   --chart-2: #3D5A3D;
-  --chart-3: #8B2E1F;
+  --chart-3: #B33A3A;
   --chart-4: #6B6B68;
   --chart-5: #1A1A1A;
   --sidebar: #FAF9F5;
   --sidebar-foreground: #1A1A1A;
-  --sidebar-primary: #B8732E;
+  --sidebar-primary: #70C1FF;
   --sidebar-primary-foreground: #FAF9F5;
   --sidebar-accent: #F5F4F0;
   --sidebar-accent-foreground: #1A1A1A;
   --sidebar-border: #D9D7D0;
-  --sidebar-ring: #B8732E;
+  --sidebar-ring: #70C1FF;
+
+  /* Aliases for the landing's short-name convention.
+     Keep both naming styles resolving to the same source of truth. */
+  --bg: var(--background);
+  --text: var(--foreground);
+  --text-2: var(--foreground-secondary);
+  --danger: var(--destructive);
 }
 
 .dark {
@@ -90,6 +99,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-foreground-secondary: var(--foreground-secondary);
+  --color-surface: var(--surface);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);

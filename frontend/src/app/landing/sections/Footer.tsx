@@ -12,7 +12,7 @@ export function Footer() {
     <footer
       style={{
         borderTop: "1px solid var(--border)",
-        padding: "56px 0 28px",
+        padding: "clamp(40px, 6vh, 56px) 0 clamp(20px, 3vh, 28px)",
         background: "var(--surface)",
       }}
     >
@@ -22,8 +22,8 @@ export function Footer() {
           style={{
             display: "grid",
             gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
-            gap: 48,
-            marginBottom: 56,
+            gap: "clamp(28px, 4vw, 48px)",
+            marginBottom: "clamp(40px, 6vh, 56px)",
           }}
         >
           <div>

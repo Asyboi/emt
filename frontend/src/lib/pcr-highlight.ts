@@ -5,8 +5,8 @@ const UNCONFIRMED_TOKEN = '[UNCONFIRMED]';
 const SECTION_RULE_RE = /^={20,}$/;
 
 const DEFAULT_TOKEN_STYLE: CSSProperties = {
-  background: 'rgba(184, 115, 46, 0.18)',
-  color: '#7A4C1F',
+  background: 'color-mix(in srgb, var(--primary) 18%, transparent)',
+  color: 'var(--primary-strong)',
   borderRadius: 2,
   padding: '0 2px',
 };
@@ -54,30 +54,45 @@ export function countUnconfirmed(text: string): number {
   return (text.match(/\[UNCONFIRMED\]/g) ?? []).length;
 }
 
+// Sections look like:
+//
+//   ============
+//   HEADER LINE
+//   ============
+//   ...content...
+//
+// We only treat a rule as a section *opener* if it sits above a non-rule
+// line AND another rule line — otherwise field rows like "Agency: ..." get
+// mistaken for headers and `===` rules leak into the body.
+function isHeaderTriple(lines: string[], i: number): boolean {
+  if (i + 2 >= lines.length) return false;
+  return (
+    SECTION_RULE_RE.test(lines[i].trim()) &&
+    lines[i + 1].trim().length > 0 &&
+    !SECTION_RULE_RE.test(lines[i + 1].trim()) &&
+    SECTION_RULE_RE.test(lines[i + 2].trim())
+  );
+}
+
 export function parsePcrSections(text: string): PcrSection[] {
   const lines = text.split('\n');
-  const anchors: { header: string; startLine: number }[] = [];
+  const sections: PcrSection[] = [];
 
+  // Collect every triple's opener index up-front so we know where each
+  // section's content stops (= the next section's opener).
+  const openers: number[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!SECTION_RULE_RE.test(lines[i].trim())) continue;
-    for (let j = i + 1; j < lines.length; j++) {
-      const next = lines[j].trim();
-      if (next && !SECTION_RULE_RE.test(next)) {
-        anchors.push({ header: next, startLine: j });
-        break;
-      }
-    }
+    if (isHeaderTriple(lines, i)) openers.push(i);
   }
 
-  // Section separators usually appear above AND below a header — only the
-  // first match is the real anchor, so collapse consecutive duplicates.
-  const deduped = anchors.filter(
-    (s, idx) => idx === 0 || s.header !== anchors[idx - 1].header,
-  );
+  for (let s = 0; s < openers.length; s++) {
+    const i = openers[s];
+    const header = lines[i + 1].trim();
+    const contentStart = i + 3; // skip opener rule, header, closer rule
+    const contentEnd = openers[s + 1] ?? lines.length;
+    const content = lines.slice(contentStart, contentEnd).join('\n');
+    sections.push({ header, content, startLine: i });
+  }
 
-  return deduped.map((anchor, idx) => {
-    const nextStart = deduped[idx + 1]?.startLine ?? lines.length;
-    const content = lines.slice(anchor.startLine + 1, nextStart).join('\n');
-    return { header: anchor.header, content, startLine: anchor.startLine };
-  });
+  return sections;
 }

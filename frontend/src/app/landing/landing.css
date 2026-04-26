@@ -1,14 +1,8 @@
 .calyx-landing {
-  --bg: #f5f4f0;
-  --surface: #faf9f5;
-  --subcard: #edece8;
-  --primary: #70c1ff;
-  --success: #3d5a3d;
-  --border: #d9d7d0;
+  /* All palette tokens (--bg, --text, --primary, etc.) come from :root in theme.css.
+     The one local override is --muted, because shadcn/Tailwind already binds --muted
+     to a surface color globally — here it's the warm gray text shade used for labels. */
   --muted: #9a9890;
-  --text: #1a1a1a;
-  --text-2: #6b6b68;
-  --danger: #b33a3a;
 
   background: var(--bg);
   color: var(--text);
@@ -112,7 +106,7 @@
 .calyx-landing .container {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 40px;
+  padding: 0 clamp(20px, 3vw, 40px);
 }
 
 .calyx-landing .section-marker {
@@ -261,13 +255,13 @@
   .calyx-landing .preview-grid {
     grid-template-columns: 1fr !important;
   }
-}
-
-@media (max-width: 900px) {
-  .calyx-landing .container {
-    padding: 0 24px;
+  .calyx-landing .stats-grid {
+    grid-template-columns: 1fr !important;
+    row-gap: 64px !important;
   }
 }
+
+/* container side padding is fluid via clamp() — no stepped override needed */
 
 @media (max-width: 700px) {
   .calyx-landing .nav-links {

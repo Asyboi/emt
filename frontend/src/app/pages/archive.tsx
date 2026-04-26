@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Search } from 'lucide-react';
 import { useIncidentList } from '../../data/hooks';
+import { isFinalizedLocally } from '../../data/approvals';
 import { useSavedPcrs } from '../../data/pcr-hooks';
 import { getDataSource } from '../../data/source';
 import type { PCRDraft } from '../../types/backend';
@@ -55,7 +56,14 @@ export function Archive() {
 
   const q = searchQuery.toLowerCase();
 
-  const filteredReports = (reports ?? []).filter(
+  // Overlay locally-finalized cases onto the backend status. The backend's
+  // `human_reviewed` flag isn't wired up to the UI yet, so the local flag
+  // (set by Save Final Report) is what flips a row from DRAFT to FINALIZED.
+  const enrichedReports = (reports ?? []).map((r) =>
+    isFinalizedLocally(r.id) ? { ...r, status: 'finalized' as const } : r,
+  );
+
+  const filteredReports = enrichedReports.filter(
     (r) =>
       r.id.toLowerCase().includes(q) ||
       r.date.includes(searchQuery) ||

@@ -6,8 +6,10 @@ import type {
   QICaseReview,
 } from '../types/backend';
 import type { IncidentReport } from '../types';
+import { buildMockReport } from '../mock/mock_data';
 import { adaptReview } from './adapters';
 import { API_BASE } from './api';
+import { getDataSource } from './source';
 
 export interface StageStatus {
   status: PipelineStatus;
@@ -34,6 +36,21 @@ const EMPTY_STATE: ProcessingState = {
   elapsedSeconds: 0,
 };
 
+// Local-mode pipeline: stages run in the same shape the backend emits, paced
+// to feel real without dragging out a click-through demo. Tweak STEP_MS to
+// speed up / slow down the simulation.
+const LOCAL_STEP_MS = 650;
+const LOCAL_STAGE_ORDER: PipelineStage[] = [
+  'cad_parsing',
+  'pcr_parsing',
+  'video_analysis',
+  'audio_analysis',
+  'reconciliation',
+  'protocol_check',
+  'findings',
+  'drafting',
+];
+
 export function useProcessingStream(
   caseId: string | undefined,
   options: { demo?: boolean } = {},
@@ -59,7 +76,6 @@ export function useProcessingStream(
     startTsRef.current = null;
 
     let aborted = false;
-    let evtSrc: EventSource | null = null;
 
     const stopTicker = () => {
       if (tickerRef.current !== null) {
@@ -76,6 +92,71 @@ export function useProcessingStream(
         }
       }, 1000);
     };
+
+    // Local mode: synthesize the pipeline progression from a deterministic
+    // schedule, no backend involved. Avoids the EventSource entirely.
+    if (getDataSource().mode === 'local') {
+      startTsRef.current = Date.now();
+      startTicker();
+
+      const timeouts: number[] = [];
+
+      LOCAL_STAGE_ORDER.forEach((stage, idx) => {
+        // Mark running at idx*STEP_MS
+        timeouts.push(
+          window.setTimeout(() => {
+            if (aborted) return;
+            setStages((prev) => {
+              const next = new Map(prev);
+              next.set(stage, {
+                status: 'running',
+                startedAt: new Date().toISOString(),
+              });
+              return next;
+            });
+          }, idx * LOCAL_STEP_MS),
+        );
+
+        // Mark complete at (idx+1)*STEP_MS
+        timeouts.push(
+          window.setTimeout(() => {
+            if (aborted) return;
+            setStages((prev) => {
+              const next = new Map(prev);
+              const existing = next.get(stage);
+              next.set(stage, {
+                status: 'complete',
+                startedAt: existing?.startedAt,
+                completedAt: new Date().toISOString(),
+              });
+              return next;
+            });
+          }, (idx + 1) * LOCAL_STEP_MS),
+        );
+      });
+
+      // After every stage completes, synthesize the review.
+      timeouts.push(
+        window.setTimeout(
+          () => {
+            if (aborted) return;
+            setReview(buildMockReport(caseId));
+            setIsComplete(true);
+            stopTicker();
+          },
+          LOCAL_STAGE_ORDER.length * LOCAL_STEP_MS + 200,
+        ),
+      );
+
+      return () => {
+        aborted = true;
+        timeouts.forEach((t) => window.clearTimeout(t));
+        stopTicker();
+      };
+    }
+
+    // Remote mode (live backend or backend-served demo replay).
+    let evtSrc: EventSource | null = null;
 
     const cleanup = () => {
       aborted = true;

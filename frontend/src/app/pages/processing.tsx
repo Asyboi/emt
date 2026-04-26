@@ -1,19 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Loader2, AlertTriangle, CheckCircle2, Circle } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { useIncident } from '../../data/hooks';
-import { getDataSource } from '../../data/source';
 import { useProcessingStream } from '../../data/sse';
 import type { PipelineStage, PipelineStatus } from '../../types/backend';
 import type { AgentStatus, AgentTile, PipelineFinding } from '../../types';
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C_SUCCESS = '#3D5A3D';
-const C_PRIMARY = '#B8732E';
-const C_BORDER = '#D9D7D0';
-const C_MUTED = '#9A9890';
-const C_SURFACE = '#FAF9F5';
-const C_SUBCARD = '#EDECE8';
+// ── Design tokens (resolved from theme.css :root) ────────────────────────────
+const C_SUCCESS = 'var(--success)';
+const C_PRIMARY = 'var(--primary)';
+const C_BORDER = 'var(--border)';
+const C_MUTED = 'var(--text-2)';
+const C_SURFACE = 'var(--surface)';
+const C_SUBCARD = 'var(--subcard)';
 
 // ── Stage configuration (data-driven 8-card grid) ─────────────────────────────
 interface StageDef {
@@ -75,7 +73,7 @@ function SubTile({ sa }: { sa: AgentTile }) {
             fontSize: 10,
             fontWeight: 700,
             letterSpacing: '0.08em',
-            color: '#1A1A1A',
+            color: 'var(--text)',
           }}
         >
           {sa.shortName}
@@ -101,7 +99,7 @@ function SubTile({ sa }: { sa: AgentTile }) {
             fontSize: 9,
             letterSpacing: '0.07em',
             background: C_BORDER,
-            color: '#6B6B68',
+            color: 'var(--text-2)',
           }}
         >
           RULE-BASED
@@ -183,7 +181,7 @@ function StageCard({
         style={{
           fontFamily: 'var(--font-mono)',
           fontSize: 12,
-          color: '#6B6B68',
+          color: 'var(--text-2)',
           display: 'flex',
           alignItems: 'center',
           gap: 6,
@@ -258,7 +256,10 @@ function ReconciliationCard({
       {status === 'active' && (
         <div
           className="inline-flex items-center gap-1.5 self-start px-2 py-1 rounded-sm"
-          style={{ background: 'rgba(184,115,46,0.08)', border: '1px solid rgba(184,115,46,0.22)' }}
+          style={{
+            background: 'color-mix(in srgb, var(--primary) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--primary) 22%, transparent)',
+          }}
         >
           <span
             className="w-1.5 h-1.5 rounded-full animate-pulse"
@@ -304,33 +305,27 @@ export function Processing() {
   const navigate = useNavigate();
   const demoFlag = searchParams.get('demo') === '1';
 
-  const isRemote = useMemo(() => getDataSource().mode === 'remote', []);
+  // Use the unified pipeline stream — it handles both local synthesis and
+  // remote SSE. Local mode replays a deterministic stage progression; remote
+  // mode streams real backend events.
+  const stream = useProcessingStream(caseId, { demo: demoFlag });
 
-  const localIncident = useIncident(isRemote ? undefined : caseId);
-  const remoteState = useProcessingStream(isRemote ? caseId : undefined, { demo: demoFlag });
-
-  // Auto-navigate to review on completion (remote only).
+  // Auto-navigate to review once the pipeline completes (in either mode).
   useEffect(() => {
-    if (isRemote && remoteState.isComplete && caseId) {
-      const t = window.setTimeout(() => navigate(`/review/${caseId}`), 2000);
+    if (stream.isComplete && caseId) {
+      const t = window.setTimeout(() => navigate(`/review/${caseId}`), 1600);
       return () => window.clearTimeout(t);
     }
-  }, [isRemote, remoteState.isComplete, caseId, navigate]);
+  }, [stream.isComplete, caseId, navigate]);
 
-  // Reconciliation sub-tile timed sequence.
-  // Index meaning: -1 = all waiting, 0..2 = that index active (lower indices complete),
-  // 3 = all complete. The timed chain advances on `running`; on `complete` jumps to 3.
-  const reconBackendStatus = isRemote
-    ? remoteState.stages.get('reconciliation')?.status
-    : 'complete';
+  // Reconciliation sub-tile timed sequence: drives the inner sub-agent chain
+  // when reconciliation is the running stage. -1 = waiting, 0..2 = that index
+  // active, 3 = all complete.
+  const reconStatus = stream.stages.get('reconciliation')?.status;
   const [reconSubIdx, setReconSubIdx] = useState<number>(-1);
 
   useEffect(() => {
-    if (!isRemote) {
-      setReconSubIdx(3);
-      return;
-    }
-    if (reconBackendStatus === 'running') {
+    if (reconStatus === 'running') {
       setReconSubIdx(0);
       const t1 = window.setTimeout(() => setReconSubIdx(1), RECON_SUB_STEP_MS);
       const t2 = window.setTimeout(() => setReconSubIdx(2), RECON_SUB_STEP_MS * 2);
@@ -339,12 +334,12 @@ export function Processing() {
         window.clearTimeout(t2);
       };
     }
-    if (reconBackendStatus === 'complete') {
+    if (reconStatus === 'complete') {
       setReconSubIdx(3);
     } else {
       setReconSubIdx(-1);
     }
-  }, [isRemote, reconBackendStatus]);
+  }, [reconStatus]);
 
   function subTileStatus(idx: number): AgentStatus {
     if (reconSubIdx === -1) return 'waiting';
@@ -362,38 +357,29 @@ export function Processing() {
     status: subTileStatus(i),
   }));
 
-  // Resolve stage status for any pipeline stage.
+  // Resolve stage status from the unified stream.
   function getStageStatus(stage: PipelineStage): AgentStatus {
-    if (!isRemote) return 'complete';
-    return pipelineStatusToAgentStatus(remoteState.stages.get(stage)?.status);
+    return pipelineStatusToAgentStatus(stream.stages.get(stage)?.status);
   }
 
-  // Header values
-  const elapsed = isRemote
-    ? remoteState.elapsedSeconds
-    : (localIncident.data?.pipeline.elapsedSeconds ?? 0);
-  const progress = isRemote
-    ? remoteState.progressPct
-    : (localIncident.data?.pipeline.progressPct ?? 100);
-  const overallStatus = isRemote
-    ? remoteState.error
-      ? 'ERROR'
-      : remoteState.isComplete
-        ? 'COMPLETE'
-        : 'ACTIVE'
-    : 'STATIC MOCK';
+  // Header values come from the live stream (local or remote).
+  const elapsed = stream.elapsedSeconds;
+  const progress = stream.progressPct;
+  const overallStatus = stream.error
+    ? 'ERROR'
+    : stream.isComplete
+      ? 'COMPLETE'
+      : 'ACTIVE';
 
-  // Findings strip (live from remote review once available; mock otherwise)
-  const findings: PipelineFinding[] = isRemote
-    ? (remoteState.review?.pipeline.findings ?? [])
-    : (localIncident.data?.pipeline.findings ?? []);
+  // Findings strip surfaces once the review arrives.
+  const findings: PipelineFinding[] = stream.review?.pipeline.findings ?? [];
 
-  const completeCount = isRemote
-    ? Array.from(remoteState.stages.values()).filter((s) => s.status === 'complete').length
-    : STAGE_CONFIG.length;
-  const activeCount = isRemote
-    ? Array.from(remoteState.stages.values()).filter((s) => s.status === 'running').length
-    : 0;
+  const completeCount = Array.from(stream.stages.values()).filter(
+    (s) => s.status === 'complete',
+  ).length;
+  const activeCount = Array.from(stream.stages.values()).filter(
+    (s) => s.status === 'running',
+  ).length;
   const flagCount = findings.filter((f) => f.type === 'warning').length;
 
   const hms = (s: number) =>
@@ -402,29 +388,31 @@ export function Processing() {
   // Loading / error states
   if (!caseId) {
     return (
-      <div className="h-screen bg-background flex items-center justify-center">
-        <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
-          Missing case id in route.
+      <div role="alert" className="h-screen bg-background flex items-center justify-center px-6">
+        <div className="text-sm text-foreground-secondary text-center max-w-md" style={{ fontFamily: 'var(--font-mono)' }}>
+          No incident ID in this URL. Open an incident from the dashboard to begin.
         </div>
       </div>
     );
   }
 
-  if (!isRemote && (localIncident.loading || !localIncident.data)) {
+  if (stream.error) {
     return (
-      <div className="h-screen bg-background flex items-center justify-center">
-        <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
-          {localIncident.error ? `Error: ${localIncident.error.message}` : 'Loading pipeline…'}
+      <div
+        role="alert"
+        className="h-screen bg-background flex flex-col items-center justify-center gap-2 px-6"
+      >
+        <div
+          className="text-xs tracking-[0.15em]"
+          style={{ fontFamily: 'var(--font-mono)', color: 'var(--destructive)' }}
+        >
+          PIPELINE ERROR
         </div>
-      </div>
-    );
-  }
-
-  if (isRemote && remoteState.error) {
-    return (
-      <div className="h-screen bg-background flex items-center justify-center">
-        <div className="text-sm" style={{ fontFamily: 'var(--font-mono)', color: '#9B2C2C' }}>
-          Pipeline error: {remoteState.error}
+        <div
+          className="text-sm text-foreground-secondary max-w-md text-center"
+          style={{ fontFamily: 'var(--font-mono)' }}
+        >
+          {stream.error}
         </div>
       </div>
     );
@@ -449,7 +437,7 @@ export function Processing() {
               fontFamily: 'var(--font-mono)',
               fontSize: 11,
               letterSpacing: '0.15em',
-              color: '#6B6B68',
+              color: 'var(--text-2)',
               marginBottom: 5,
             }}
           >
@@ -465,7 +453,7 @@ export function Processing() {
           >
             {caseId}
           </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#6B6B68' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-2)' }}>
             AGENT: CALYX-CORE-01
             <span style={{ margin: '0 12px' }}>|</span>
             ELAPSED: {hms(elapsed)}
@@ -473,7 +461,7 @@ export function Processing() {
             STATUS:{' '}
             <span
               style={{
-                color: overallStatus === 'COMPLETE' ? C_SUCCESS : overallStatus === 'ERROR' ? '#9B2C2C' : C_PRIMARY,
+                color: overallStatus === 'COMPLETE' ? C_SUCCESS : overallStatus === 'ERROR' ? 'var(--destructive)' : C_PRIMARY,
               }}
             >
               {overallStatus}
@@ -578,17 +566,17 @@ export function Processing() {
           >
             ACTIVITY LOG
           </div>
-          {isRemote ? (
-            <div style={{ fontSize: 12, color: '#6B6B68' }}>
-              Logs available after processing.
-            </div>
-          ) : (
+          {stream.review ? (
             <div className="flex flex-col gap-1">
-              {(localIncident.data?.pipeline.audioLogs ?? []).map((log, i) => (
-                <div key={i} style={{ fontSize: 12, color: '#1A1A1A' }}>
-                  <span style={{ color: '#6B6B68' }}>[{log.timestamp}]</span> {log.message}
+              {(stream.review.pipeline.audioLogs ?? []).map((log, i) => (
+                <div key={i} style={{ fontSize: 12, color: 'var(--text)' }}>
+                  <span style={{ color: 'var(--text-2)' }}>[{log.timestamp}]</span> {log.message}
                 </div>
               ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
+              Logs available after processing.
             </div>
           )}
         </div>
@@ -681,7 +669,7 @@ export function Processing() {
       >
         <div
           className="flex items-center gap-3 flex-shrink-0 whitespace-nowrap"
-          style={{ color: '#6B6B68' }}
+          style={{ color: 'var(--text-2)' }}
         >
           <span>{STAGE_CONFIG.length} STAGES</span>
           <span style={{ color: C_BORDER }}>|</span>
@@ -693,7 +681,7 @@ export function Processing() {
             {flagCount} FLAG{flagCount !== 1 ? 'S' : ''} RAISED
           </span>
         </div>
-        <span className="whitespace-nowrap flex-shrink-0" style={{ color: '#6B6B68' }}>
+        <span className="whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-2)' }}>
           Video processed audio-first · Footage not displayed without explicit user action
         </span>
       </div>

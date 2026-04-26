@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ChevronDown, ChevronRight, Circle, Volume2 } from 'lucide-react';
 import { useIncident } from '../../data/hooks';
+import { loadApprovals, saveApprovals } from '../../data/approvals';
 import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
 import { API_BASE } from '../../data/api';
 import { AmbulanceSimulation } from '../components/AmbulanceSimulation';
 import type { ReportSection, SectionStatus, TimelineCategory } from '../../types';
+import { SectionView } from '../components/section-views/SectionView';
 
 type ViewTab = 'map' | 'video' | 'pcr' | 'cad';
 
@@ -36,7 +38,16 @@ export function Review() {
 
   useEffect(() => {
     if (incident) {
-      setSections(incident.sections.map((s) => ({ ...s, status: 'draft' as SectionStatus })));
+      const saved = loadApprovals(incident.id);
+      const approvedIds = new Set(saved.approvedSectionIds);
+      setSections(
+        incident.sections.map((s) => ({
+          ...s,
+          status: approvedIds.has(s.id)
+            ? ('approved' as SectionStatus)
+            : ('draft' as SectionStatus),
+        })),
+      );
     }
   }, [incident]);
 
@@ -56,7 +67,23 @@ export function Review() {
   };
 
   const approveSection = (id: number) => {
-    setSections(sections.map((s) => (s.id === id ? { ...s, status: 'approved' } : s)));
+    const next = sections.map((s): ReportSection =>
+      s.id === id ? { ...s, status: 'approved' } : s,
+    );
+    setSections(next);
+    if (incident) {
+      const ids = next.filter((s) => s.status === 'approved').map((s) => s.id);
+      saveApprovals(incident.id, { approvedSectionIds: ids });
+    }
+    if (expandedSection === id) setExpandedSection(0);
+  };
+
+  const persistAndGo = (path: string) => {
+    if (incident) {
+      const ids = sections.filter((s) => s.status === 'approved').map((s) => s.id);
+      saveApprovals(incident.id, { approvedSectionIds: ids });
+    }
+    navigate(path);
   };
 
   const allApproved = sections.length > 0 && sections.every((s) => s.status === 'approved');
@@ -70,11 +97,34 @@ export function Review() {
     });
   };
 
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="min-h-screen bg-background flex flex-col items-center justify-center gap-2 px-6"
+      >
+        <div
+          className="text-xs tracking-[0.15em]"
+          style={{ fontFamily: 'var(--font-mono)', color: 'var(--destructive)' }}
+        >
+          COULDN'T LOAD INCIDENT
+        </div>
+        <div className="text-sm text-foreground-secondary max-w-md text-center">
+          {error.message}. Refresh to retry — or check that the backend is running on port 8000.
+        </div>
+      </div>
+    );
+  }
+
   if (loading || !incident) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div
+        role="status"
+        aria-live="polite"
+        className="min-h-screen bg-background flex items-center justify-center"
+      >
         <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
-          {error ? `Error: ${error.message}` : 'Loading incident…'}
+          Loading incident…
         </div>
       </div>
     );
@@ -100,11 +150,14 @@ export function Review() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button className="px-4 py-2 border border-border text-sm tracking-wide hover:bg-surface transition-colors">
+          <button
+            onClick={() => persistAndGo('/archive')}
+            className="px-4 py-2 border border-border text-sm tracking-wide hover:bg-surface transition-colors"
+          >
             SAVE & EXIT
           </button>
           <button
-            onClick={() => navigate(`/finalize/${incident.id}`)}
+            onClick={() => persistAndGo(`/finalize/${incident.id}`)}
             disabled={!allApproved}
             className="px-4 py-2 bg-primary text-primary-foreground text-sm tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
           >
@@ -137,42 +190,64 @@ export function Review() {
             {TRACK_LABELS.map(({ label, key }) => {
               const isExpanded = expandedTracks.has(key);
               const trackEvents = incident.timelineEvents.filter((e) => e.category === key);
+              const panelId = `track-panel-${key}`;
+              const triggerId = `track-trigger-${key}`;
 
               return (
                 <div key={key}>
                   <button
+                    id={triggerId}
                     onClick={() => toggleTrack(key)}
+                    aria-expanded={isExpanded}
+                    aria-controls={panelId}
                     className="w-full flex items-center gap-2 py-1 text-[11px] tracking-wider text-foreground-secondary hover:text-foreground transition-colors"
                     style={{ fontFamily: 'var(--font-mono)' }}
                   >
-                    {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    {isExpanded ? (
+                      <ChevronDown className="w-3 h-3" aria-hidden />
+                    ) : (
+                      <ChevronRight className="w-3 h-3" aria-hidden />
+                    )}
                     {label}
+                    <span className="sr-only">
+                      , {trackEvents.length} {trackEvents.length === 1 ? 'event' : 'events'}
+                    </span>
                   </button>
                   {isExpanded && (
-                    <div className="ml-5 mt-1 space-y-2">
-                      {trackEvents.map((event, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setSelectedEvent(event.time)}
-                          className={`w-full flex items-start gap-2 py-1.5 px-2 text-left text-[11px] transition-colors ${
-                            selectedEvent === event.time
-                              ? 'bg-primary/10 border-l-2 border-primary -ml-[2px]'
-                              : 'hover:bg-background/50'
-                          }`}
-                        >
-                          <Circle className="w-2 h-2 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <div className="font-mono text-foreground-secondary">{event.time}</div>
-                            <div className="font-mono text-foreground">{event.label}</div>
-                          </div>
-                        </button>
-                      ))}
+                    <div
+                      id={panelId}
+                      role="region"
+                      aria-labelledby={triggerId}
+                      className="ml-5 mt-1 space-y-2"
+                    >
+                      {trackEvents.map((event, idx) => {
+                        const isSelected = selectedEvent === event.time;
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedEvent(event.time)}
+                            aria-current={isSelected ? 'true' : undefined}
+                            aria-label={`Jump to ${event.time}, ${event.label}`}
+                            className={`w-full flex items-start gap-2 py-1.5 px-2 text-left text-[11px] transition-colors ${
+                              isSelected
+                                ? 'bg-primary/10 border-l-2 border-primary -ml-[2px]'
+                                : 'hover:bg-background/50'
+                            }`}
+                          >
+                            <Circle className="w-2 h-2 mt-0.5 flex-shrink-0" aria-hidden />
+                            <div className="flex-1">
+                              <div className="font-mono text-foreground-secondary">{event.time}</div>
+                              <div className="font-mono text-foreground">{event.label}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
                       {trackEvents.length === 0 && (
                         <div
                           className="px-2 py-1 text-[10px] text-foreground-secondary"
                           style={{ fontFamily: 'var(--font-mono)' }}
                         >
-                          (no entries)
+                          No {label.toLowerCase()} for this incident.
                         </div>
                       )}
                     </div>
@@ -186,25 +261,51 @@ export function Review() {
         {/* Center column - Context Viewer */}
         <div className="w-[40%] border-r border-border bg-background overflow-hidden flex flex-col">
           {/* Tabs */}
-          <div className="border-b border-border flex" style={{ fontFamily: 'var(--font-mono)' }}>
-            {(['map', 'video', 'pcr', 'cad'] as ViewTab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-3 text-xs tracking-wider transition-colors relative ${
-                  activeTab === tab
-                    ? 'text-foreground'
-                    : 'text-foreground-secondary hover:text-foreground'
-                }`}
-              >
-                {tab === 'pcr' ? 'PCR SOURCE' : tab === 'cad' ? 'CAD LOG' : tab.toUpperCase()}
-                {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-primary" />}
-              </button>
-            ))}
+          <div
+            role="tablist"
+            aria-label="Context viewer"
+            className="border-b border-border flex"
+            style={{ fontFamily: 'var(--font-mono)' }}
+          >
+            {(['map', 'video', 'pcr', 'cad'] as ViewTab[]).map((tab) => {
+              const selected = activeTab === tab;
+              const tabLabel =
+                tab === 'pcr' ? 'PCR SOURCE' : tab === 'cad' ? 'CAD LOG' : tab.toUpperCase();
+              return (
+                <button
+                  key={tab}
+                  id={`viewer-tab-${tab}`}
+                  role="tab"
+                  type="button"
+                  aria-selected={selected}
+                  aria-controls={`viewer-panel-${tab}`}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-4 py-3 text-xs tracking-wider transition-colors relative ${
+                    selected
+                      ? 'text-foreground'
+                      : 'text-foreground-secondary hover:text-foreground'
+                  }`}
+                >
+                  {tabLabel}
+                  {selected && (
+                    <div
+                      aria-hidden
+                      className="absolute bottom-0 left-0 right-0 h-[1px] bg-primary"
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-y-auto">
+          <div
+            role="tabpanel"
+            id={`viewer-panel-${activeTab}`}
+            aria-labelledby={`viewer-tab-${activeTab}`}
+            className="flex-1 overflow-y-auto"
+          >
             {activeTab === 'map' && (
               <div className="h-full relative">
                 <AmbulanceSimulation mode="qa-review" />
@@ -216,7 +317,7 @@ export function Review() {
                 {!showVideoFootage ? (
                   <div className="max-w-md text-center">
                     <div className="mb-8">
-                      <Volume2 className="w-12 h-12 mx-auto mb-4 text-foreground-secondary" />
+                      <Volume2 className="w-12 h-12 mx-auto mb-4 text-foreground-secondary" aria-hidden />
                       <div className="text-sm tracking-wide mb-6" style={{ fontFamily: 'var(--font-mono)' }}>
                         AUDIO ONLY
                       </div>
@@ -318,10 +419,10 @@ export function Review() {
                     </span>
                   </button>
 
-                  {isExpanded && section.content && (
+                  {isExpanded && (section.data || section.content) && (
                     <div className="px-4 pb-4 space-y-4">
                       <div className="text-sm leading-relaxed">
-                        {section.content}
+                        <SectionView section={section} />
                         {section.citations.map((cit, idx) => (
                           <sup
                             key={idx}

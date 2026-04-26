@@ -1,122 +1,102 @@
-import { Link, useNavigate } from 'react-router';
-import { ClipboardCheck, FileText, Play } from 'lucide-react';
+import { Link } from 'react-router';
+
+const FONT_MONO = 'var(--font-mono)';
+
+const ENTRIES = [
+  {
+    n: '01',
+    label: 'QI REVIEW',
+    body: 'Reconstruct an incident from ePCR, CAD, and video. Reconcile timeline, check protocols, produce a reviewer-ready case review.',
+    open: '/qi-review',
+    sample: '/processing/case_01?demo=1',
+    sampleAria: 'Run QI Review with local sample data',
+  },
+  {
+    n: '02',
+    label: 'PCR GENERATOR',
+    body: 'Draft a structured Patient Care Report from body-cam, dispatch audio, and CAD evidence. Review, edit, confirm.',
+    open: '/pcr-new',
+    sample: '/pcr-draft/case_01?demo=1',
+    sampleAria: 'View PCR Generator with local sample data',
+  },
+];
 
 export function Dashboard() {
-  const navigate = useNavigate();
-
-  const handleDemo = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    navigate('/processing/case_01?demo=1');
-  };
-
-  const handlePcrDemo = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    navigate('/pcr-draft/case_01?demo=1');
-  };
-
   return (
     <div className="min-h-screen bg-background">
-      {/* Top bar */}
-      <div className="border-b border-border px-8 py-4 flex items-center justify-between">
-        <h1 className="tracking-[0.2em] text-sm" style={{ fontFamily: 'var(--font-mono)' }}>
+      <div className="border-b border-border px-10 py-4 flex items-center justify-between">
+        <h1
+          className="tracking-[0.2em] text-sm"
+          style={{ fontFamily: FONT_MONO }}
+        >
           CALYX
         </h1>
         <Link
           to="/archive"
-          className="text-sm tracking-wide hover:text-primary transition-colors"
+          className="text-[11px] tracking-[0.16em] text-foreground-secondary hover:text-foreground transition-colors"
+          style={{ fontFamily: FONT_MONO }}
         >
-          SAVED REPORTS
+          SAVED REPORTS →
         </Link>
       </div>
 
-      {/* Main content */}
-      <div className="flex items-start justify-center pt-24 px-4">
-        <div className="w-full max-w-[900px]">
-          <h2
-            className="text-xs tracking-[0.15em] mb-8 text-foreground-secondary"
-            style={{ fontFamily: 'var(--font-sans)' }}
-          >
-            DASHBOARD
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Link
-              to="/qi-review"
-              className="group relative bg-surface border border-border p-10 flex flex-col justify-between min-h-[280px] hover:border-primary transition-colors"
-            >
-              <div>
-                <ClipboardCheck className="w-10 h-10 text-primary mb-6" strokeWidth={1.5} />
-                <h3
-                  className="text-2xl tracking-wide mb-3 text-foreground"
-                  style={{ fontFamily: 'var(--font-sans)' }}
-                >
-                  QI Review
-                </h3>
-                <p className="text-sm text-foreground-secondary leading-relaxed">
-                  Reconstruct an incident from ePCR, CAD, and video. Reconcile timeline,
-                  check protocols, and produce a reviewer-ready case review.
-                </p>
-              </div>
-              <div className="flex items-end justify-between mt-8 gap-4">
-                <div
-                  className="text-xs tracking-[0.15em] text-foreground-secondary group-hover:text-primary transition-colors"
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                >
-                  OPEN →
-                </div>
-                <button
-                  type="button"
-                  onClick={handleDemo}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-border bg-background hover:border-primary hover:text-primary transition-colors text-[10px] tracking-[0.15em] text-foreground-secondary"
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                  aria-label="Run QI Review with local sample data"
-                >
-                  <Play className="w-3 h-3" strokeWidth={1.8} />
-                  DEMO
-                </button>
-              </div>
-            </Link>
-
-            <Link
-              to="/pcr-new"
-              className="group relative bg-surface border border-border p-10 flex flex-col justify-between min-h-[280px] hover:border-primary transition-colors"
-            >
-              <div>
-                <FileText className="w-10 h-10 text-primary mb-6" strokeWidth={1.5} />
-                <h3
-                  className="text-2xl tracking-wide mb-3 text-foreground"
-                  style={{ fontFamily: 'var(--font-sans)' }}
-                >
-                  PCR Generator
-                </h3>
-                <p className="text-sm text-foreground-secondary leading-relaxed">
-                  Draft a structured Patient Care Report from body-cam, dispatch audio,
-                  and CAD evidence. Review, edit, and confirm before saving.
-                </p>
-              </div>
-              <div className="flex items-end justify-between mt-8 gap-4">
-                <div
-                  className="text-xs tracking-[0.15em] text-foreground-secondary group-hover:text-primary transition-colors"
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                >
-                  OPEN →
-                </div>
-                <button
-                  type="button"
-                  onClick={handlePcrDemo}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-border bg-background hover:border-primary hover:text-primary transition-colors text-[10px] tracking-[0.15em] text-foreground-secondary"
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                  aria-label="View PCR Generator with local sample data"
-                >
-                  <Play className="w-3 h-3" strokeWidth={1.8} />
-                  DEMO
-                </button>
-              </div>
-            </Link>
-          </div>
+      <div className="mx-auto max-w-[920px] px-10 pt-32 pb-24">
+        <div
+          className="flex items-center gap-3 text-[11px] tracking-[0.18em] text-foreground-secondary mb-10"
+          style={{ fontFamily: FONT_MONO }}
+        >
+          <span className="block h-px w-6 bg-foreground-secondary/60" aria-hidden />
+          DASHBOARD
         </div>
+
+        <h2 className="text-[clamp(36px,5vw,56px)] leading-[1.05] tracking-[-0.02em] mb-20 max-w-[14ch]">
+          Two workflows.{' '}
+          <span className="text-foreground-secondary">Pick one.</span>
+        </h2>
+
+        <ul className="border-t border-border list-none p-0 m-0">
+          {ENTRIES.map((e) => (
+            <li
+              key={e.n}
+              className="grid grid-cols-[64px_1fr_auto] gap-x-10 py-10 border-b border-border items-baseline"
+            >
+              <span
+                className="text-[11px] tracking-[0.18em] text-foreground-secondary self-start pt-1"
+                style={{ fontFamily: FONT_MONO }}
+              >
+                {e.n}
+              </span>
+
+              <div>
+                <div
+                  className="text-[13px] tracking-[0.12em] text-foreground mb-3"
+                  style={{ fontFamily: FONT_MONO, fontWeight: 600 }}
+                >
+                  {e.label}
+                </div>
+                <p className="text-[15px] leading-[1.55] text-foreground-secondary max-w-[58ch]">
+                  {e.body}
+                </p>
+                <Link
+                  to={e.sample}
+                  className="inline-block mt-5 text-[10.5px] tracking-[0.18em] text-foreground-secondary hover:text-foreground transition-colors"
+                  style={{ fontFamily: FONT_MONO }}
+                  aria-label={e.sampleAria}
+                >
+                  · TRY WITH SAMPLE DATA
+                </Link>
+              </div>
+
+              <Link
+                to={e.open}
+                className="self-center text-[11px] tracking-[0.18em] text-foreground hover:text-primary transition-colors whitespace-nowrap"
+                style={{ fontFamily: FONT_MONO }}
+              >
+                OPEN →
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

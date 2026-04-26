@@ -5,7 +5,11 @@ export function FinalCTA() {
   return (
     <section
       id="demo"
-      style={{ padding: "180px 0 140px", position: "relative", overflow: "hidden" }}
+      style={{
+        padding: "clamp(96px, 16vh, 180px) 0 clamp(80px, 12vh, 140px)",
+        position: "relative",
+        overflow: "hidden",
+      }}
     >
       <div
         className="dot-grid"
@@ -13,16 +17,16 @@ export function FinalCTA() {
       />
       <div className="container" style={{ position: "relative" }}>
         <Reveal>
-          <div className="section-marker" style={{ marginBottom: 44 }}>
-            07 · GET STARTED
+          <div className="section-marker" style={{ marginBottom: "clamp(28px, 4vh, 44px)" }}>
+            07 / GET STARTED
           </div>
         </Reveal>
         <h2
           className="display"
           style={{
-            fontSize: "clamp(48px, 9vw, 156px)",
+            fontSize: "clamp(40px, min(8vw, 12vh), 140px)",
             maxWidth: "12ch",
-            marginBottom: 44,
+            marginBottom: "clamp(28px, 4vh, 44px)",
           }}
         >
           <RevealWords stagger={0.08}>
@@ -36,16 +40,16 @@ export function FinalCTA() {
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
-              gap: 64,
+              gap: "clamp(32px, 5vw, 64px)",
               alignItems: "end",
               maxWidth: 1200,
             }}
           >
             <p
               style={{
-                fontSize: 18,
+                fontSize: "clamp(15px, 1.4vw, 18px)",
                 color: "var(--text-2)",
-                maxWidth: 540,
+                maxWidth: "55ch",
                 lineHeight: 1.5,
               }}
             >

@@ -14,9 +14,9 @@ export function EditorialHeader({ num, label, headline, body }: EditorialHeaderP
       className="editorial-grid"
       style={{
         display: "grid",
-        gridTemplateColumns: "200px 1fr",
-        gap: 64,
-        marginBottom: 80,
+        gridTemplateColumns: "minmax(120px, 200px) 1fr",
+        gap: "clamp(32px, 5vw, 64px)",
+        marginBottom: "clamp(48px, 8vh, 80px)",
         alignItems: "start",
       }}
     >
@@ -40,9 +40,9 @@ export function EditorialHeader({ num, label, headline, body }: EditorialHeaderP
         <h2
           className="display"
           style={{
-            fontSize: "clamp(36px, 5vw, 68px)",
+            fontSize: "clamp(30px, min(4.5vw, 6vh), 64px)",
             maxWidth: "16ch",
-            marginBottom: body ? 28 : 0,
+            marginBottom: body ? "clamp(20px, 3vh, 28px)" : 0,
           }}
         >
           <RevealWords>{headline}</RevealWords>
@@ -51,10 +51,10 @@ export function EditorialHeader({ num, label, headline, body }: EditorialHeaderP
           <Reveal delay={0.2}>
             <p
               style={{
-                fontSize: 17,
+                fontSize: "clamp(15px, 1.3vw, 17px)",
                 color: "var(--text-2)",
                 lineHeight: 1.55,
-                maxWidth: 640,
+                maxWidth: "60ch",
               }}
             >
               {body}

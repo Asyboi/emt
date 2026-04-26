@@ -17,6 +17,7 @@ import type {
   IncidentSummary,
   PipelineFinding,
   ReportSection,
+  SectionData,
   TimelineCategory,
   TimelineEvent,
 } from '../types';
@@ -121,16 +122,70 @@ function buildRecommendations(recs: Recommendation[]): string {
 }
 
 function buildSections(review: QICaseReview): ReportSection[] {
-  const specs: { id: number; title: string; content: string }[] = [
-    { id: 1, title: 'INCIDENT SUMMARY', content: buildIncidentSummary(review) },
-    { id: 2, title: 'TIMELINE RECONSTRUCTION', content: buildTimelineSection(review.timeline) },
-    { id: 3, title: 'PCR DOCUMENTATION CHECK', content: buildDocumentationCheck(review) },
-    { id: 4, title: 'PROTOCOL COMPLIANCE REVIEW', content: buildProtocolCompliance(review) },
-    { id: 5, title: 'KEY CLINICAL DECISIONS', content: buildKeyDecisions(review.clinical_assessment) },
-    { id: 6, title: 'COMMUNICATION / SCENE MANAGEMENT', content: buildSceneAndHandoff(review.clinical_assessment) },
-    { id: 7, title: 'STRENGTHS', content: buildStrengths(review.clinical_assessment) },
-    { id: 8, title: 'AREAS FOR IMPROVEMENT', content: buildAreasForImprovement(review.findings) },
-    { id: 9, title: 'RECOMMENDED FOLLOW-UP', content: buildRecommendations(review.recommendations) },
+  const keyDecisions = review.clinical_assessment.filter((i) => i.status !== 'not_applicable');
+  const sceneHandoff = review.clinical_assessment.filter(
+    (i) => i.category === 'scene_management' || i.category === 'handoff',
+  );
+  const strengths = review.clinical_assessment.filter((i) => i.status === 'met');
+  const concerns = review.findings.filter(
+    (f) => f.severity === 'concern' || f.severity === 'critical',
+  );
+
+  const specs: { id: number; title: string; content: string; data: SectionData }[] = [
+    {
+      id: 1,
+      title: 'INCIDENT SUMMARY',
+      content: buildIncidentSummary(review),
+      data: { kind: 'incident-summary', text: review.incident_summary },
+    },
+    {
+      id: 2,
+      title: 'TIMELINE RECONSTRUCTION',
+      content: buildTimelineSection(review.timeline),
+      data: { kind: 'timeline', entries: review.timeline },
+    },
+    {
+      id: 3,
+      title: 'PCR DOCUMENTATION CHECK',
+      content: buildDocumentationCheck(review),
+      data: { kind: 'doc-quality', quality: review.documentation_quality },
+    },
+    {
+      id: 4,
+      title: 'PROTOCOL COMPLIANCE REVIEW',
+      content: buildProtocolCompliance(review),
+      data: { kind: 'protocol-checks', checks: review.protocol_checks },
+    },
+    {
+      id: 5,
+      title: 'KEY CLINICAL DECISIONS',
+      content: buildKeyDecisions(review.clinical_assessment),
+      data: { kind: 'clinical-assessment', items: keyDecisions },
+    },
+    {
+      id: 6,
+      title: 'COMMUNICATION / SCENE MANAGEMENT',
+      content: buildSceneAndHandoff(review.clinical_assessment),
+      data: { kind: 'clinical-assessment', items: sceneHandoff },
+    },
+    {
+      id: 7,
+      title: 'STRENGTHS',
+      content: buildStrengths(review.clinical_assessment),
+      data: { kind: 'strengths', items: strengths },
+    },
+    {
+      id: 8,
+      title: 'AREAS FOR IMPROVEMENT',
+      content: buildAreasForImprovement(review.findings),
+      data: { kind: 'findings', findings: concerns },
+    },
+    {
+      id: 9,
+      title: 'RECOMMENDED FOLLOW-UP',
+      content: buildRecommendations(review.recommendations),
+      data: { kind: 'recommendations', recs: review.recommendations },
+    },
   ];
 
   return specs.map((s) => ({
@@ -140,6 +195,7 @@ function buildSections(review: QICaseReview): ReportSection[] {
     content: s.content,
     preview: preview(s.content),
     citations: [],
+    data: s.data,
   }));
 }
 

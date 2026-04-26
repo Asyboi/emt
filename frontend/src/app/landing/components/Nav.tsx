@@ -18,7 +18,7 @@ export function Nav() {
     left: 0,
     right: 0,
     zIndex: 50,
-    padding: "16px 40px",
+    padding: "clamp(12px, 1.5vh, 16px) clamp(20px, 3vw, 40px)",
     backdropFilter: "blur(12px)",
     WebkitBackdropFilter: "blur(12px)",
     background: scrolled ? "rgba(245,244,240,0.65)" : "rgba(245,244,240,0.5)",
@@ -37,27 +37,24 @@ export function Nav() {
           justifyContent: "space-between",
         }}
       >
-        <Logo size={29} fontSize={26} />
+        <Logo size={22} fontSize={20} />
         <div
           style={{ display: "flex", alignItems: "center", gap: 32 }}
           className="nav-links"
+          aria-hidden
         >
           {NAV_ITEMS.map((item) => (
-            <a
+            <span
               key={item}
-              href="#"
               className="mono"
               style={{
                 fontSize: 11,
                 color: "var(--text-2)",
                 letterSpacing: "0.14em",
-                transition: "color 0.2s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-2)")}
             >
               {item}
-            </a>
+            </span>
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>

@@ -39,6 +39,10 @@ export function DemoNav() {
 
   if (!active) return null;
 
+  // Hide the floating demo nav on PCR pages — those flows have their own
+  // header chrome and the bottom bar overlaps the editor / read-only view.
+  if (location.pathname.startsWith('/pcr')) return null;
+
   const withDemo = (to: string) => `${to}${to.includes('?') ? '&' : '?'}demo=1`;
 
   const exit = () => {
