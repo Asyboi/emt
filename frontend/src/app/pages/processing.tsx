@@ -280,8 +280,16 @@ export function Processing() {
   // card grows (e.g. reconciliation expands its sub-agent chain), the
   // lines re-anchor automatically.
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const fitWrapRef = useRef<HTMLDivElement | null>(null);
   const parallelRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const seqRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Scale factor that shrinks the canvas to fit the available viewport.
+  // Stored in a ref so the line-drawing effect can read the current value
+  // when undoing the transform on getBoundingClientRect deltas.
+  const [scale, setScale] = useState(1);
+  const scaleRef = useRef(1);
+  scaleRef.current = scale;
 
   const setParallelRef = useCallback(
     (stage: PipelineStage) => (el: HTMLDivElement | null) => {
@@ -309,8 +317,41 @@ export function Processing() {
   };
 
   // Triggers that may shift any card's bounding rect: stage statuses (which
-  // drive sub-agent reveals) and the timed sub-agent indexes themselves.
-  const layoutSig = `${parallelStatuses.join('|')}|${reconStatus}|${reconSubIdx}|${draftingStatus}|${draftingPhase}`;
+  // drive sub-agent reveals), the timed sub-agent indexes themselves, and
+  // the fit-to-viewport scale (since deltas are divided by it).
+  const layoutSig = `${parallelStatuses.join('|')}|${reconStatus}|${reconSubIdx}|${draftingStatus}|${draftingPhase}|${scale}`;
+
+  // Fit-to-viewport scaler. Measures the canvas's natural (pre-transform)
+  // dimensions via offsetWidth/offsetHeight and the available wrapper size
+  // via clientWidth/clientHeight, then sets a uniform scale ≤ 1 so the
+  // pipeline never overflows the viewport in either axis.
+  useLayoutEffect(() => {
+    const fit = fitWrapRef.current;
+    const canvas = canvasRef.current;
+    if (!fit || !canvas) return;
+
+    const compute = () => {
+      const naturalW = canvas.offsetWidth;
+      const naturalH = canvas.offsetHeight;
+      const availW = fit.clientWidth;
+      const availH = fit.clientHeight;
+      if (!naturalW || !naturalH || !availW || !availH) return;
+      const sx = availW / naturalW;
+      const sy = availH / naturalH;
+      const next = Math.min(1, sx, sy);
+      setScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
+    };
+
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(fit);
+    ro.observe(canvas);
+    window.addEventListener('resize', compute);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', compute);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -324,6 +365,10 @@ export function Processing() {
       if (!cv) return;
       const cRect = cv.getBoundingClientRect();
       const next: PipelinePath[] = [];
+      // SVG lives inside the scaled canvas, so its coordinate system is the
+      // *unscaled* canvas. getBoundingClientRect returns transformed values,
+      // so divide deltas by the current scale to recover layout-space coords.
+      const sf = scaleRef.current || 1;
 
       // Convergence fan-in: each parallel card → recon card's left edge at
       // the title-row level. Source point is each parallel card's right
@@ -331,8 +376,8 @@ export function Processing() {
       const reconEl = seqRefs.current.reconciliation;
       if (reconEl) {
         const r = reconEl.getBoundingClientRect();
-        const targetX = r.left - cRect.left;
-        const targetY = r.top + CARD_HEADER_OFFSET - cRect.top;
+        const targetX = (r.left - cRect.left) / sf;
+        const targetY = (r.top - cRect.top) / sf + CARD_HEADER_OFFSET;
 
         for (const agent of PARALLEL_AGENTS) {
           const el = parallelRefs.current[agent.stage];
@@ -340,8 +385,8 @@ export function Processing() {
           const pr = el.getBoundingClientRect();
           next.push({
             id: `fan-${agent.stage}`,
-            x1: pr.right - cRect.left,
-            y1: pr.top + pr.height / 2 - cRect.top,
+            x1: (pr.right - cRect.left) / sf,
+            y1: (pr.top - cRect.top) / sf + (pr.height / sf) / 2,
             x2: targetX,
             y2: targetY,
             sourceStatus: getStageStatus(agent.stage),
@@ -359,10 +404,10 @@ export function Processing() {
         const nr = nextEl.getBoundingClientRect();
         next.push({
           id: `spine-${SEQUENTIAL_ORDER[i - 1]}-${SEQUENTIAL_ORDER[i]}`,
-          x1: pr.right - cRect.left,
-          y1: pr.top + CARD_HEADER_OFFSET - cRect.top,
-          x2: nr.left - cRect.left,
-          y2: nr.top + CARD_HEADER_OFFSET - cRect.top,
+          x1: (pr.right - cRect.left) / sf,
+          y1: (pr.top - cRect.top) / sf + CARD_HEADER_OFFSET,
+          x2: (nr.left - cRect.left) / sf,
+          y2: (nr.top - cRect.top) / sf + CARD_HEADER_OFFSET,
           sourceStatus: getStageStatus(SEQUENTIAL_ORDER[i - 1]),
         });
       }
@@ -396,7 +441,7 @@ export function Processing() {
   // ── Loading / error states ──
   if (!caseId) {
     return (
-      <div role="alert" className="h-screen bg-background flex items-center justify-center px-6">
+      <div role="alert" className="h-full bg-background flex items-center justify-center px-6">
         <div
           className="text-sm text-foreground-secondary text-center max-w-md"
           style={{ fontFamily: 'var(--font-sans)' }}
@@ -411,7 +456,7 @@ export function Processing() {
     return (
       <div
         role="alert"
-        className="h-screen bg-background flex flex-col items-center justify-center gap-2 px-6"
+        className="h-full bg-background flex flex-col items-center justify-center gap-2 px-6"
       >
         <div
           style={{
@@ -438,7 +483,7 @@ export function Processing() {
   // ── Render ──
   return (
     <div
-      className="h-screen flex flex-col overflow-hidden"
+      className="h-full flex flex-col overflow-hidden"
       style={{ background: 'var(--background)', fontFamily: 'var(--font-sans)' }}
     >
       {/* Header */}
@@ -506,25 +551,20 @@ export function Processing() {
 
       {/* Pipeline visualization */}
       <main
-        className="flex-1 min-h-0 overflow-y-auto"
+        ref={fitWrapRef}
+        className="flex-1 min-h-0 min-w-0 overflow-hidden"
         style={{
           background: 'var(--background)',
           backgroundImage:
-            'radial-gradient(circle, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px)',
-          backgroundSize: '32px 32px',
+            'radial-gradient(circle, color-mix(in srgb, var(--text) 10%, transparent) 1px, transparent 1.2px)',
+          backgroundSize: '28px 28px',
+          padding: '28px 36px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxSizing: 'border-box',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-start',
-            alignItems: 'center',
-            padding: '28px 36px',
-            overflowX: 'auto',
-            minHeight: '100%',
-            boxSizing: 'border-box',
-          }}
-        >
           <div
             ref={canvasRef}
             style={{
@@ -532,6 +572,9 @@ export function Processing() {
               display: 'flex',
               alignItems: 'center',
               gap: 0,
+              transform: `scale(${scale})`,
+              transformOrigin: 'center center',
+              flexShrink: 0,
             }}
           >
             {/* Zone 1: Parallel extraction */}
@@ -673,7 +716,6 @@ export function Processing() {
             {/* SVG overlay — coords computed dynamically, lines draw on completion */}
             <PipelineLines paths={paths} />
           </div>
-        </div>
       </main>
 
       {selectedStage && (

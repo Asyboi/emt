@@ -112,7 +112,7 @@ export function PixelCross() {
     const getPrimary = () =>
       getComputedStyle(document.documentElement)
         .getPropertyValue("--primary")
-        .trim() || "#70c1ff";
+        .trim() || "#C8102E";
 
     const tick = (now: number) => {
       ctx.clearRect(0, 0, W, H);

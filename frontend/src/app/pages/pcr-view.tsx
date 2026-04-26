@@ -108,7 +108,7 @@ function PageShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-full overflow-hidden bg-background flex flex-col">
       <div
         className="border-b border-border px-8 py-3 flex items-center gap-3 text-[11px] tracking-[0.15em] text-foreground-secondary flex-shrink-0"
         style={{ fontFamily: FONT_MONO }}
@@ -684,7 +684,7 @@ export function PcrView() {
 
   if (!caseId) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="h-full bg-background flex items-center justify-center">
         <div
           className="text-sm text-foreground-secondary"
           style={{ fontFamily: FONT_MONO }}

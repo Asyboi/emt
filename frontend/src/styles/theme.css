@@ -11,9 +11,9 @@
   --foreground: #1A1A1A;
   --foreground-secondary: #6B6B68;
   --border: #D9D7D0;
-  --primary: #70C1FF;
+  --primary: #C8102E;
   --primary-foreground: #FAF9F5;
-  --primary-strong: #1E5C8A;
+  --primary-strong: #7A0A1C;
   --destructive: #B33A3A;
   --destructive-foreground: #FAF9F5;
   --success: #3D5A3D;
@@ -27,29 +27,29 @@
   --secondary-foreground: #1A1A1A;
   --muted: #F5F4F0;
   --muted-foreground: #6B6B68;
-  --accent: #70C1FF;
+  --accent: #C8102E;
   --accent-foreground: #FAF9F5;
   --input: transparent;
   --input-background: #FAF9F5;
   --switch-background: #D9D7D0;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #70C1FF;
+  --ring: #C8102E;
   --radius: 0.25rem;
 
-  --chart-1: #70C1FF;
+  --chart-1: #C8102E;
   --chart-2: #3D5A3D;
   --chart-3: #B33A3A;
   --chart-4: #6B6B68;
   --chart-5: #1A1A1A;
   --sidebar: #FAF9F5;
   --sidebar-foreground: #1A1A1A;
-  --sidebar-primary: #70C1FF;
+  --sidebar-primary: #C8102E;
   --sidebar-primary-foreground: #FAF9F5;
   --sidebar-accent: #F5F4F0;
   --sidebar-accent-foreground: #1A1A1A;
   --sidebar-border: #D9D7D0;
-  --sidebar-ring: #70C1FF;
+  --sidebar-ring: #C8102E;
 
   /* Aliases for the landing's short-name convention.
      Keep both naming styles resolving to the same source of truth. */

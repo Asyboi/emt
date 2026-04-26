@@ -76,7 +76,6 @@ export function AmbulanceSimulation({
     pause,
     reset,
     jumpToEvent,
-    progress,
   } = useAmbulanceAnimation(AMBULANCE_ROUTE, events);
 
   // Cards are visible iff the ambulance is within proximity of an event AND
@@ -238,9 +237,8 @@ export function AmbulanceSimulation({
   return (
     <div
       ref={fsRef}
-      className="relative w-full h-full"
+      className="relative w-full h-full overflow-hidden"
       style={{
-        minHeight: '500px',
         background: 'var(--background)',
       }}
     >
@@ -326,7 +324,6 @@ export function AmbulanceSimulation({
 
       <PlaybackControls
         isPlaying={isPlaying}
-        progress={progress}
         simTime={simTime}
         onPlay={play}
         onPause={pause}

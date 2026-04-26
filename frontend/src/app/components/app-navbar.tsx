@@ -53,7 +53,7 @@ export function AppNavbar({ right }: { right?: ReactNode }) {
     >
       <div className="px-10 py-4 flex items-center gap-8">
         <Link
-          to={withDemo('/dashboard')}
+          to="/"
           className="tracking-[0.2em] text-sm text-foreground hover:text-primary transition-colors"
           aria-label="Calyx home"
         >

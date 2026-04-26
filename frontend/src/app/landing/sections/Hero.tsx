@@ -60,10 +60,8 @@ export function Hero() {
             }}
           >
             <RevealWords stagger={0.07} delay={0.1}>
-              The black box{" "}
-              <span style={{ color: "var(--muted)" }}>
-                for emergency medical services.
-              </span>
+              The <span style={{ color: "var(--primary)" }}>black box</span>{" "}
+              for emergency medical services.
             </RevealWords>
           </h1>
 

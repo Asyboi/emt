@@ -71,7 +71,9 @@ function DashboardCard({ entry }: { entry: Entry }) {
           className="flex items-center gap-3 text-[11px] tracking-[0.18em] text-foreground-secondary"
           style={{ fontFamily: FONT_MONO }}
         >
-          <span className="text-foreground">{entry.n}</span>
+          <span style={{ color: 'var(--primary-strong)', fontWeight: 600 }}>
+            {entry.n}
+          </span>
           <span className="block h-px w-6 bg-foreground-secondary/60" aria-hidden />
           <span>{entry.audience}</span>
         </div>
@@ -173,8 +175,8 @@ function DashboardCard({ entry }: { entry: Entry }) {
 
 export function Dashboard() {
   return (
-    <div className="h-[calc(100vh-57px)] overflow-hidden bg-background flex items-center justify-center px-10">
-      <div className="w-full max-w-[1040px] flex flex-col">
+    <div className="h-full overflow-hidden bg-background flex items-center justify-center px-10">
+      <div className="w-full max-w-[1320px] flex flex-col">
         <div
           className="flex items-center gap-3 text-[11px] tracking-[0.18em] text-foreground-secondary mb-8"
           style={{ fontFamily: FONT_MONO }}
@@ -183,7 +185,7 @@ export function Dashboard() {
           DASHBOARD
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-24">
           {ENTRIES.map((e) => (
             <DashboardCard key={e.n} entry={e} />
           ))}

@@ -3,9 +3,11 @@ import { AppNavbar } from './app-navbar';
 
 export function Layout() {
   return (
-    <>
+    <div className="h-screen flex flex-col">
       <AppNavbar />
-      <Outlet />
-    </>
+      <main className="flex-1 min-h-0 min-w-0">
+        <Outlet />
+      </main>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { AlertTriangle, Check, CheckCircle2, Circle, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 
 import { confirmPcrDraft, createPcrDraft } from '../../data/pcr-api';
 import { usePcrDraft } from '../../data/pcr-hooks';
@@ -12,16 +12,27 @@ import {
 } from '../../lib/pcr-highlight';
 import { PCR_BLANK_TEMPLATE } from '../../lib/pcr-template';
 import type { PCRDraft } from '../../types/backend';
+import { AgentCard } from '../components/pipeline/AgentCard';
+import { ModelPill } from '../components/pipeline/ModelPill';
+import { ParallelBox } from '../components/pipeline/ParallelBox';
+import {
+  PipelineLines,
+  type PipelinePath,
+} from '../components/pipeline/PipelineLines';
+import type {
+  AgentVizStatus,
+  ModelPillKind,
+  ModelPillSpec,
+} from '../components/pipeline/types';
 
 // ── Design tokens (resolved from theme.css :root) ────────────────────────────
 const C_SUCCESS = 'var(--success)';
 const C_PRIMARY = 'var(--primary)';
-const C_BORDER = 'var(--border)';
-const C_MUTED = 'var(--text-2)';
 const C_HIGHLIGHT = 'color-mix(in srgb, var(--primary) 18%, transparent)';
 
 const POST_CONFIRM_REDIRECT_MS = 2400;
 const GENERATING_STAGE_MS = 1800;
+const DEMO_GENERATING_MS = 10_000;
 
 const FONT_MONO = 'var(--font-mono)';
 
@@ -183,27 +194,71 @@ function HighlightedEditor({ value, onChange, textareaRef }: EditorProps) {
 }
 
 // ── Generating state ─────────────────────────────────────────────────────────
-interface GenStage {
+//
+// Mirrors the QI Processing page pipeline diagram, scoped to the PCR
+// auto-draft pre-pipeline:
+//
+//   ┌─ CAD sync (pydantic)              ──╮
+//   │  Video analysis (Gemini)           ──┼──>  Sonnet drafting → PCRDraft
+//   └─ Audio analysis (Scribe + Haiku)  ──╯
+//
+// Status is simulated from elapsed time since the PCR draft endpoint has
+// no SSE stream — only a polling loop.
+
+interface PcrParallelDef {
+  id: 'cad' | 'video' | 'audio';
   label: string;
-  startsAt: number; // seconds since generation start
+  description: string;
+  pills: ModelPillSpec[];
+  startsAt: number;
   completesAt: number;
 }
 
-const GEN_STAGES: GenStage[] = [
-  { label: 'Reading CAD data', startsAt: 0, completesAt: 2 },
-  { label: 'Analyzing video', startsAt: 0, completesAt: 18 },
-  { label: 'Analyzing audio', startsAt: 0, completesAt: 18 },
-  { label: 'Drafting with Sonnet', startsAt: 18, completesAt: 60 },
+const PCR_PARALLEL: PcrParallelDef[] = [
+  {
+    id: 'cad',
+    label: 'CAD sync',
+    description: 'Pure-Python parse of cad.json into a typed CAD record.',
+    pills: [{ kind: 'pydantic' }],
+    startsAt: 0,
+    completesAt: 2,
+  },
+  {
+    id: 'video',
+    label: 'Video analysis',
+    description: 'Body-cam frames → timestamped clinical events.',
+    pills: [{ kind: 'gemini' }],
+    startsAt: 0,
+    completesAt: 18,
+  },
+  {
+    id: 'audio',
+    label: 'Audio analysis',
+    description: 'Dispatch audio: transcribe, then extract events.',
+    pills: [{ kind: 'scribe' }, { kind: 'haiku' }],
+    startsAt: 0,
+    completesAt: 18,
+  },
 ];
 
-function statusForGenStage(stage: GenStage, elapsed: number): 'waiting' | 'active' | 'complete' {
-  if (elapsed >= stage.completesAt) return 'complete';
-  if (elapsed >= stage.startsAt) return 'active';
-  return 'waiting';
+const PCR_DRAFTING_STARTS_AT = 18;
+const PCR_DRAFTING_COMPLETES_AT = 60;
+
+function statusFromElapsed(
+  startsAt: number,
+  completesAt: number,
+  elapsed: number,
+): AgentVizStatus {
+  if (elapsed >= completesAt) return 'complete';
+  if (elapsed >= startsAt) return 'running';
+  return 'pending';
 }
+
+const PCR_CARD_HEADER_OFFSET = 24;
 
 function GeneratingState({ caseId }: { caseId: string }) {
   const [elapsed, setElapsed] = useState(0);
+
   useEffect(() => {
     const start = Date.now();
     const t = window.setInterval(() => {
@@ -212,100 +267,359 @@ function GeneratingState({ caseId }: { caseId: string }) {
     return () => window.clearInterval(t);
   }, []);
 
+  const parallelStatuses = PCR_PARALLEL.map((s) =>
+    statusFromElapsed(s.startsAt, s.completesAt, elapsed),
+  );
+  const draftingStatus = statusFromElapsed(
+    PCR_DRAFTING_STARTS_AT,
+    PCR_DRAFTING_COMPLETES_AT,
+    elapsed,
+  );
+  const parallelComplete = parallelStatuses.filter((s) => s === 'complete').length;
+
+  // Layout-tracking refs (mirror processing.tsx: SVG overlay reads element
+  // rects each layout pass so connector lines re-anchor as cards grow).
+  const fitWrapRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const parallelRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const draftingRef = useRef<HTMLDivElement | null>(null);
+
+  const [scale, setScale] = useState(1);
+  const scaleRef = useRef(1);
+  scaleRef.current = scale;
+
+  const setParallelRef = useCallback(
+    (id: string) => (el: HTMLDivElement | null) => {
+      parallelRefs.current[id] = el;
+    },
+    [],
+  );
+
+  const [paths, setPaths] = useState<PipelinePath[]>([]);
+
+  const layoutSig = `${parallelStatuses.join('|')}|${draftingStatus}|${scale}`;
+
+  // Fit-to-viewport scaler.
+  useLayoutEffect(() => {
+    const fit = fitWrapRef.current;
+    const canvas = canvasRef.current;
+    if (!fit || !canvas) return;
+
+    const compute = () => {
+      const naturalW = canvas.offsetWidth;
+      const naturalH = canvas.offsetHeight;
+      const availW = fit.clientWidth;
+      const availH = fit.clientHeight;
+      if (!naturalW || !naturalH || !availW || !availH) return;
+      const sx = availW / naturalW;
+      const sy = availH / naturalH;
+      const next = Math.min(1, sx, sy);
+      setScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
+    };
+
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(fit);
+    ro.observe(canvas);
+    window.addEventListener('resize', compute);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', compute);
+    };
+  }, []);
+
+  // Compute connector paths from element rects.
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let raf = 0;
+
+    const compute = () => {
+      raf = 0;
+      const cv = canvasRef.current;
+      if (!cv) return;
+      const cRect = cv.getBoundingClientRect();
+      const sf = scaleRef.current || 1;
+      const next: PipelinePath[] = [];
+
+      const draftEl = draftingRef.current;
+      if (draftEl) {
+        const r = draftEl.getBoundingClientRect();
+        const targetX = (r.left - cRect.left) / sf;
+        const targetY = (r.top - cRect.top) / sf + PCR_CARD_HEADER_OFFSET;
+
+        PCR_PARALLEL.forEach((agent, i) => {
+          const el = parallelRefs.current[agent.id];
+          if (!el) return;
+          const pr = el.getBoundingClientRect();
+          next.push({
+            id: `pcr-fan-${agent.id}`,
+            x1: (pr.right - cRect.left) / sf,
+            y1: (pr.top - cRect.top) / sf + pr.height / sf / 2,
+            x2: targetX,
+            y2: targetY,
+            sourceStatus: parallelStatuses[i],
+          });
+        });
+      }
+
+      setPaths((prev) => (samePcrPaths(prev, next) ? prev : next));
+    };
+
+    const schedule = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(compute);
+    };
+
+    schedule();
+
+    const ro = new ResizeObserver(schedule);
+    ro.observe(canvas);
+    Object.values(parallelRefs.current).forEach((el) => el && ro.observe(el));
+    if (draftingRef.current) ro.observe(draftingRef.current);
+    window.addEventListener('resize', schedule);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', schedule);
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutSig]);
+
+  const overallStatus =
+    draftingStatus === 'complete'
+      ? 'complete'
+      : parallelStatuses.some((s) => s === 'running') || draftingStatus === 'running'
+        ? 'active'
+        : 'pending';
+  const overallStatusColor =
+    overallStatus === 'complete' ? 'var(--success)' : 'var(--primary-strong)';
+  const hms = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s) % 60).padStart(2, '0')}`;
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <div className="flex-1 flex items-center justify-center px-4">
-        <div className="w-full max-w-[520px]">
-          <div className="bg-surface border border-border p-8">
-            <div
-              className="flex items-center justify-between text-[10px] tracking-[0.15em] text-foreground-secondary mb-4"
-              style={{ fontFamily: FONT_MONO }}
-            >
-              <span>{caseId}</span>
-            </div>
-            <h2
-              className="text-xs tracking-[0.15em] mb-1 text-foreground-secondary"
-              style={{ fontFamily: 'var(--font-sans)' }}
-            >
-              GENERATING PCR DRAFT
-            </h2>
-            <div
-              className="text-xs text-foreground-secondary mb-6"
-              style={{ fontFamily: FONT_MONO }}
-            >
-              {caseId} · elapsed {Math.floor(elapsed)}s
-            </div>
+    <div
+      className="h-full flex flex-col overflow-hidden"
+      style={{ background: 'var(--background)', fontFamily: 'var(--font-sans)' }}
+    >
+      {/* Header */}
+      <header
+        className="flex-shrink-0 border-b"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'var(--surface)',
+          padding: '18px 36px',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: 'var(--text-2)',
+            fontWeight: 500,
+          }}
+        >
+          Generating PCR draft
+        </div>
+        <div
+          style={{
+            fontSize: 22,
+            fontWeight: 500,
+            color: 'var(--text)',
+            marginTop: 3,
+            letterSpacing: 0.1,
+          }}
+        >
+          {caseId}
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--text-2)',
+            marginTop: 4,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <span>PCR-DRAFTER</span>
+          <span style={{ color: 'var(--border)' }}>|</span>
+          <span>{hms(elapsed)} elapsed</span>
+          <span style={{ color: 'var(--border)' }}>|</span>
+          <span
+            style={{
+              color: overallStatusColor,
+              fontWeight: 500,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            {overallStatus}
+          </span>
+        </div>
+      </header>
 
-            <div className="space-y-2.5">
-              {GEN_STAGES.map((s) => {
-                const status = statusForGenStage(s, elapsed);
-                const accent =
-                  status === 'complete' ? C_SUCCESS : status === 'active' ? C_PRIMARY : C_MUTED;
-                return (
-                  <div
-                    key={s.label}
-                    className="flex items-center justify-between px-3 py-2 rounded-sm"
-                    style={{
-                      background: 'var(--surface)',
-                      border: `1px solid ${C_BORDER}`,
-                      borderLeft: `3px solid ${accent}`,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontFamily: FONT_MONO,
-                        fontSize: 12,
-                        letterSpacing: '0.06em',
-                        color: 'var(--text)',
-                      }}
-                    >
-                      {s.label}
-                    </span>
-                    {status === 'complete' && (
-                      <Check style={{ width: 13, height: 13, color: C_SUCCESS }} />
-                    )}
-                    {status === 'active' && (
-                      <Loader2
-                        className="animate-spin"
-                        style={{ width: 13, height: 13, color: C_PRIMARY }}
-                      />
-                    )}
-                    {status === 'waiting' && (
-                      <Circle style={{ width: 13, height: 13, color: C_MUTED }} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+      {/* Pipeline visualization */}
+      <main
+        ref={fitWrapRef}
+        className="flex-1 min-h-0 min-w-0 overflow-hidden"
+        style={{
+          background: 'var(--background)',
+          backgroundImage:
+            'radial-gradient(circle, color-mix(in srgb, var(--text) 10%, transparent) 1px, transparent 1.2px)',
+          backgroundSize: '28px 28px',
+          padding: '28px 36px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div
+          ref={canvasRef}
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0,
+            transform: `scale(${scale})`,
+            transformOrigin: 'center center',
+            flexShrink: 0,
+          }}
+        >
+          {/* Zone 1: Parallel extraction */}
+          <ParallelBox
+            title="Parallel extraction"
+            completedCount={parallelComplete}
+            totalCount={PCR_PARALLEL.length}
+            parallelismLabel="asyncio.gather()"
+            width={260}
+          >
+            {PCR_PARALLEL.map((agent, i) => (
+              <div key={agent.id} ref={setParallelRef(agent.id)}>
+                <AgentCard
+                  label={agent.label}
+                  description={agent.description}
+                  pills={agent.pills}
+                  status={parallelStatuses[i]}
+                  variant="parallel"
+                />
+              </div>
+            ))}
+          </ParallelBox>
 
-            <div
-              className="relative mt-6 h-[3px] overflow-hidden"
-              style={{ background: C_BORDER }}
-            >
-              <div
-                className="absolute inset-y-0 left-0"
-                style={{
-                  width: '40%',
-                  background: C_PRIMARY,
-                  animation: 'pcrPulse 1.6s ease-in-out infinite',
-                }}
-              />
-            </div>
-            <style>{`
-              @keyframes pcrPulse {
-                0%   { transform: translateX(-100%); }
-                100% { transform: translateX(250%); }
-              }
-            `}</style>
+          {/* Zone 2: Convergence — empty space, lines drawn by SVG overlay */}
+          <div style={{ width: 96, flexShrink: 0 }} aria-hidden />
+
+          {/* Zone 3: Sonnet drafter */}
+          <div ref={draftingRef} style={{ flexShrink: 0 }}>
+            <AgentCard
+              label="Sonnet drafting"
+              description="Single Claude Sonnet 4.6 call: CAD + video + audio events → PCR markdown with [UNCONFIRMED] flags."
+              pills={[{ kind: 'sonnet' }]}
+              status={draftingStatus}
+              variant="sequential"
+              noteRight="max_tokens=3000"
+              width={340}
+            />
           </div>
 
-          <p className="text-xs text-foreground-secondary text-center mt-6">
-            This typically takes 30 seconds to 2 minutes depending on video length.
-          </p>
+          {/* SVG overlay */}
+          <PipelineLines paths={paths} />
         </div>
+      </main>
+
+      {/* Legend */}
+      <div
+        className="flex-shrink-0 border-t"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'var(--surface)',
+          padding: '10px 36px',
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 16,
+          fontSize: 11,
+          color: 'var(--text-2)',
+        }}
+      >
+        <PcrLegendItem pill="pydantic" tagline="deterministic" />
+        <PcrLegendItem pill="gemini" tagline="video" />
+        <PcrLegendItem pill="scribe" tagline="transcription" />
+        <PcrLegendItem pill="haiku" tagline="fast extraction" />
+        <PcrLegendItem pill="sonnet" tagline="deep reasoning" />
       </div>
+
+      {/* Footer */}
+      <footer
+        className="flex-shrink-0 border-t"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'var(--surface)',
+          padding: '10px 36px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: 11,
+          color: 'var(--text-2)',
+        }}
+      >
+        <div className="flex items-center" style={{ gap: 14 }}>
+          <span>4 stages</span>
+          <span style={{ color: 'var(--border)' }}>|</span>
+          <span style={{ color: 'var(--text-2)' }}>polling · 2s interval</span>
+          <span style={{ color: 'var(--border)' }}>|</span>
+          <span style={{ color: 'var(--text-2)' }}>typically 30s – 2m</span>
+        </div>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--text-2)',
+          }}
+        >
+          POST /api/cases/{caseId}/pcr-draft
+        </span>
+      </footer>
     </div>
   );
+}
+
+function PcrLegendItem({
+  pill,
+  tagline,
+}: {
+  pill: ModelPillKind;
+  tagline: string;
+}) {
+  return (
+    <span className="inline-flex items-center" style={{ gap: 6 }}>
+      <ModelPill kind={pill} />
+      <span style={{ color: 'var(--text-2)', fontSize: 11 }}>{tagline}</span>
+    </span>
+  );
+}
+
+function samePcrPaths(a: PipelinePath[], b: PipelinePath[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.x1 !== y.x1 ||
+      x.y1 !== y.y1 ||
+      x.x2 !== y.x2 ||
+      x.y2 !== y.y2 ||
+      x.sourceStatus !== y.sourceStatus
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // ── Error state ──────────────────────────────────────────────────────────────
@@ -325,7 +639,7 @@ function ErrorState({
   busy,
 }: ErrorStateProps) {
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-full overflow-hidden bg-background flex flex-col">
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-[560px] bg-surface border border-border p-8">
           <div
@@ -386,7 +700,7 @@ function ErrorState({
 // ── Confirmed state (brief) ──────────────────────────────────────────────────
 function ConfirmedState({ draft }: { draft: PCRDraft }) {
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+    <div className="h-full overflow-y-auto bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-[460px] bg-surface border border-border p-10 text-center">
         <CheckCircle2
           className="mx-auto mb-5"
@@ -474,7 +788,7 @@ function EditorState({
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-full overflow-hidden bg-background flex flex-col">
       {/* Context strip */}
       <div
         className="border-b border-border px-8 py-3 flex items-center gap-3 text-[11px] tracking-[0.15em] text-foreground-secondary flex-shrink-0"
@@ -510,7 +824,7 @@ function EditorState({
           </div>
 
           <div
-            className="mx-6 mb-4 border border-border flex-1 min-h-[480px]"
+            className="mx-6 mb-4 border border-border flex-1 min-h-0"
             style={{ background: 'var(--surface)' }}
           >
             <HighlightedEditor value={text} onChange={setText} textareaRef={taRef} />
@@ -686,6 +1000,17 @@ export function PcrDraft() {
   const [forcedManualWrite, setForcedManualWrite] = useState(false);
   // Cosmetic generating state used briefly after a successful regenerate.
   const [showGenerating, setShowGenerating] = useState(false);
+  // In demo/local mode the draft is available immediately, so there's no
+  // natural "generating" window. Hold the diagram visible for ~10s on
+  // initial mount (and after a regenerate) so the agentic flow is shown.
+  const [demoGenerating, setDemoGenerating] = useState(isDemo);
+
+  // Drop the demo generating overlay after a fixed window.
+  useEffect(() => {
+    if (!demoGenerating) return;
+    const t = window.setTimeout(() => setDemoGenerating(false), DEMO_GENERATING_MS);
+    return () => window.clearTimeout(t);
+  }, [demoGenerating]);
 
   const draft = isDemo ? demoDraft : liveDraft;
 
@@ -710,7 +1035,7 @@ export function PcrDraft() {
   // ── Guards ──────────────────────────────────────────────────────────────
   if (!caseId) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="h-full overflow-y-auto bg-background flex items-center justify-center">
         <div
           className="text-sm text-foreground-secondary"
           style={{ fontFamily: FONT_MONO }}
@@ -758,7 +1083,7 @@ export function PcrDraft() {
     return <GeneratingState caseId={caseId} />;
   }
 
-  if (showGenerating || (!isDemo && isGenerating)) {
+  if (showGenerating || demoGenerating || (!isDemo && isGenerating)) {
     return <GeneratingState caseId={caseId} />;
   }
 
@@ -828,9 +1153,11 @@ export function PcrDraft() {
         setActionError(null);
         try {
           if (isDemo) {
-            // Demo: just reset the editor to the original demo body.
+            // Demo: reset the editor to the original demo body and replay
+            // the generating diagram for the same window.
             setDemoDraft({ ...DEMO_DRAFT, generated_at: new Date().toISOString() });
             setForcedManualWrite(false);
+            setDemoGenerating(true);
           } else {
             await createPcrDraft(caseId);
             refetch();

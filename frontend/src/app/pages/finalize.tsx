@@ -175,7 +175,7 @@ export function Finalize() {
 
   if (loading || !incident) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="h-full bg-background flex items-center justify-center">
         <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
           {error ? `Error: ${error.message}` : 'Loading incident…'}
         </div>
@@ -184,7 +184,7 @@ export function Finalize() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-20">
+    <div className="h-full overflow-y-auto bg-background pb-20">
       {/* Header bar */}
       <div className="border-b border-border bg-surface px-8 py-4">
         <div className="flex items-start justify-between mb-3">

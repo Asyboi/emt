@@ -20,6 +20,11 @@ dist/
 # and the non-standard backend/case_*/ path some teammates have used.
 cases/*/video.*
 cases/*/audio.*
+cases/*/*.mp4
+cases/*/*.mov
+cases/*/*.mp3
+cases/*/*.wav
+cases/*/*.m4a
 backend/case_*/video.*
 backend/case_*/audio.*
 

@@ -77,7 +77,7 @@ export function DemoNav() {
       <button
         type="button"
         onClick={exit}
-        className="px-2 py-1 text-[10px] tracking-[0.15em] text-foreground-secondary hover:text-destructive transition-colors"
+        className="px-2 py-1 text-[10px] tracking-[0.15em] text-foreground-secondary hover:text-foreground transition-colors"
         aria-label="Exit demo mode"
       >
         EXIT

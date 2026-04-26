@@ -1,6 +1,5 @@
 interface PlaybackControlsProps {
   isPlaying: boolean;
-  progress: number;
   simTime: number;
   onPlay: () => void;
   onPause: () => void;
@@ -16,7 +15,6 @@ function formatTime(seconds: number): string {
 
 export function PlaybackControls({
   isPlaying,
-  progress,
   simTime,
   onPlay,
   onPause,
@@ -24,19 +22,6 @@ export function PlaybackControls({
 }: PlaybackControlsProps) {
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 w-72">
-      <div
-        className="w-full h-1 rounded-full overflow-hidden"
-        style={{ background: 'var(--border)' }}
-      >
-        <div
-          className="h-full transition-all duration-100"
-          style={{
-            width: `${progress * 100}%`,
-            background: 'var(--primary)',
-          }}
-        />
-      </div>
-
       <div
         className="flex items-center gap-3 rounded-full px-4 py-2 border border-border"
         style={{ background: 'var(--surface)' }}

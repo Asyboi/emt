@@ -9,6 +9,7 @@ import { PcrNew } from "./pages/pcr-new";
 import { PcrView } from "./pages/pcr-view";
 import { Processing } from "./pages/processing";
 import { Review } from "./pages/review";
+import { ReviewReport } from "./pages/review-report";
 import { Finalize } from "./pages/finalize";
 import { Archive } from "./pages/archive";
 
@@ -51,6 +52,10 @@ export const router = createBrowserRouter([
           {
             path: "review/:incidentId",
             Component: Review,
+          },
+          {
+            path: "review/:incidentId/report",
+            Component: ReviewReport,
           },
           {
             path: "finalize/:incidentId",

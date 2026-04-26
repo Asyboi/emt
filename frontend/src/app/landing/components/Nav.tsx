@@ -1,8 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { Link } from "react-router";
 import { Logo } from "./Logo";
-
-const NAV_ITEMS = ["PLATFORM", "SOLUTIONS", "CUSTOMERS", "COMPANY"];
 
 export function Nav() {
   const [scrolled, setScrolled] = useState(false);
@@ -38,30 +35,6 @@ export function Nav() {
         }}
       >
         <Logo size={22} fontSize={20} />
-        <div
-          style={{ display: "flex", alignItems: "center", gap: 32 }}
-          className="nav-links"
-          aria-hidden
-        >
-          {NAV_ITEMS.map((item) => (
-            <span
-              key={item}
-              className="mono"
-              style={{
-                fontSize: 11,
-                color: "var(--text-2)",
-                letterSpacing: "0.14em",
-              }}
-            >
-              {item}
-            </span>
-          ))}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <Link to="/dashboard" className="btn btn-primary" style={{ padding: "9px 16px" }}>
-            DASHBOARD
-          </Link>
-        </div>
       </div>
     </nav>
   );

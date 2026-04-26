@@ -1,13 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ChevronDown, ChevronRight, Circle, Volume2 } from 'lucide-react';
 import { useIncident } from '../../data/hooks';
-import { loadApprovals, saveApprovals } from '../../data/approvals';
 import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
 import { API_BASE } from '../../data/api';
 import { AmbulanceSimulation } from '../components/AmbulanceSimulation';
-import type { ReportSection, SectionStatus, TimelineCategory } from '../../types';
-import { SectionView } from '../components/section-views/SectionView';
+import type { TimelineCategory } from '../../types';
 
 type ViewTab = 'map' | 'video' | 'pcr' | 'cad';
 
@@ -26,67 +24,12 @@ export function Review() {
   const { data: incident, loading, error } = useIncident(resolvedId);
 
   const [activeTab, setActiveTab] = useState<ViewTab>('map');
-  const [expandedSection, setExpandedSection] = useState(1);
   const [showVideoFootage, setShowVideoFootage] = useState(false);
   const [keyMomentsOnly, setKeyMomentsOnly] = useState(true);
   const [expandedTracks, setExpandedTracks] = useState<Set<TimelineCategory>>(
     new Set(['cad', 'gps', 'video', 'pcr', 'vitals'])
   );
   const [selectedEvent, setSelectedEvent] = useState<string>('14:32');
-
-  const [sections, setSections] = useState<ReportSection[]>([]);
-
-  useEffect(() => {
-    if (incident) {
-      const saved = loadApprovals(incident.id);
-      const approvedIds = new Set(saved.approvedSectionIds);
-      setSections(
-        incident.sections.map((s) => ({
-          ...s,
-          status: approvedIds.has(s.id)
-            ? ('approved' as SectionStatus)
-            : ('draft' as SectionStatus),
-        })),
-      );
-    }
-  }, [incident]);
-
-  const getStatusTag = (status: SectionStatus) => {
-    switch (status) {
-      case 'edited':
-        return <span className="text-primary">[EDITED]</span>;
-      case 'approved':
-        return <span className="text-success">[APPROVED]</span>;
-      default:
-        return <span className="text-foreground-secondary">[DRAFT]</span>;
-    }
-  };
-
-  const toggleSection = (id: number) => {
-    setExpandedSection(expandedSection === id ? 0 : id);
-  };
-
-  const approveSection = (id: number) => {
-    const next = sections.map((s): ReportSection =>
-      s.id === id ? { ...s, status: 'approved' } : s,
-    );
-    setSections(next);
-    if (incident) {
-      const ids = next.filter((s) => s.status === 'approved').map((s) => s.id);
-      saveApprovals(incident.id, { approvedSectionIds: ids });
-    }
-    if (expandedSection === id) setExpandedSection(0);
-  };
-
-  const persistAndGo = (path: string) => {
-    if (incident) {
-      const ids = sections.filter((s) => s.status === 'approved').map((s) => s.id);
-      saveApprovals(incident.id, { approvedSectionIds: ids });
-    }
-    navigate(path);
-  };
-
-  const allApproved = sections.length > 0 && sections.every((s) => s.status === 'approved');
 
   const toggleTrack = (track: TimelineCategory) => {
     setExpandedTracks((prev) => {
@@ -101,7 +44,7 @@ export function Review() {
     return (
       <div
         role="alert"
-        className="min-h-screen bg-background flex flex-col items-center justify-center gap-2 px-6"
+        className="h-full bg-background flex flex-col items-center justify-center gap-2 px-6"
       >
         <div
           className="text-xs tracking-[0.15em]"
@@ -121,7 +64,7 @@ export function Review() {
       <div
         role="status"
         aria-live="polite"
-        className="min-h-screen bg-background flex items-center justify-center"
+        className="h-full bg-background flex items-center justify-center"
       >
         <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
           Loading incident…
@@ -131,9 +74,9 @@ export function Review() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-full bg-background flex flex-col min-h-0">
       {/* Top bar */}
-      <div className="border-b border-border px-6 py-3 flex items-center justify-between">
+      <div className="border-b border-border px-6 py-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4" style={{ fontFamily: 'var(--font-mono)' }}>
           <span className="text-sm">{incident.id}</span>
           <span className="text-foreground-secondary text-sm">/</span>
@@ -151,23 +94,22 @@ export function Review() {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => persistAndGo('/archive')}
+            onClick={() => navigate('/archive')}
             className="px-4 py-2 border border-border text-sm tracking-wide hover:bg-surface transition-colors"
           >
             SAVE & EXIT
           </button>
           <button
-            onClick={() => persistAndGo(`/finalize/${incident.id}`)}
-            disabled={!allApproved}
-            className="px-4 py-2 bg-primary text-primary-foreground text-sm tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+            onClick={() => navigate(`/review/${incident.id}/report`)}
+            className="px-4 py-2 bg-primary text-primary-foreground text-sm tracking-wide hover:opacity-90 transition-opacity"
           >
-            FINALIZE REPORT
+            NEXT
           </button>
         </div>
       </div>
 
-      {/* Three-column layout */}
-      <div className="flex-1 flex">
+      {/* Two-column layout */}
+      <div className="flex-1 flex min-h-0">
         {/* Left column - Timeline */}
         <div className="w-[25%] border-r border-border bg-surface overflow-y-auto">
           <div className="p-4 border-b border-border">
@@ -258,8 +200,8 @@ export function Review() {
           </div>
         </div>
 
-        {/* Center column - Context Viewer */}
-        <div className="w-[40%] border-r border-border bg-background overflow-hidden flex flex-col">
+        {/* Right column - Context Viewer (expanded) */}
+        <div className="flex-1 bg-background overflow-hidden flex flex-col">
           {/* Tabs */}
           <div
             role="tablist"
@@ -304,10 +246,10 @@ export function Review() {
             role="tabpanel"
             id={`viewer-panel-${activeTab}`}
             aria-labelledby={`viewer-tab-${activeTab}`}
-            className="flex-1 overflow-y-auto"
+            className={`flex-1 min-h-0 ${activeTab === 'map' ? 'overflow-hidden' : 'overflow-y-auto'}`}
           >
             {activeTab === 'map' && (
-              <div className="h-full relative">
+              <div className="w-full h-full relative">
                 <AmbulanceSimulation
                   mode="qa-review"
                   caseVideoUrl={`${API_BASE}/api/cases/${resolvedId}/video`}
@@ -398,57 +340,6 @@ export function Review() {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Right column - Report */}
-        <div className="w-[35%] bg-surface overflow-y-auto">
-          <div className="p-6 space-y-3">
-            {sections.map((section) => {
-              const isExpanded = expandedSection === section.id;
-
-              return (
-                <div key={section.id} className="border border-border bg-background">
-                  <button
-                    onClick={() => toggleSection(section.id)}
-                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-surface/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                      <span className="text-xs tracking-[0.1em]">{section.title}</span>
-                    </div>
-                    <span className="text-xs" style={{ fontFamily: 'var(--font-mono)' }}>
-                      {getStatusTag(section.status)}
-                    </span>
-                  </button>
-
-                  {isExpanded && (section.data || section.content) && (
-                    <div className="px-4 pb-4 space-y-4">
-                      <div className="text-sm leading-relaxed">
-                        <SectionView section={section} />
-                        {section.citations.map((cit, idx) => (
-                          <sup
-                            key={idx}
-                            className="text-primary mx-0.5"
-                            style={{ fontFamily: 'var(--font-mono)' }}
-                          >
-                            {cit}
-                          </sup>
-                        ))}
-                      </div>
-                      {section.status !== 'approved' && (
-                        <button
-                          onClick={() => approveSection(section.id)}
-                          className="px-4 py-2 border border-primary text-primary text-xs tracking-wide hover:bg-primary hover:text-primary-foreground transition-colors"
-                        >
-                          APPROVE
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
           </div>
         </div>
       </div>

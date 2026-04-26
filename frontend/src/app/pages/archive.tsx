@@ -92,7 +92,7 @@ export function Archive() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-full overflow-y-auto bg-background">
       {/* Top bar */}
       <div className="border-b border-border px-8 py-6 flex items-center justify-between">
         <h1 className="text-lg tracking-wide">SAVED REPORTS</h1>
