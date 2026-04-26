@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ChevronDown, ChevronRight, Circle, MapPin, Volume2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, Volume2 } from 'lucide-react';
 import { useIncident } from '../../data/hooks';
 import { loadApprovals, saveApprovals } from '../../data/approvals';
 import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
 import { API_BASE } from '../../data/api';
+import { AmbulanceSimulation } from '../components/AmbulanceSimulation';
 import type { ReportSection, SectionStatus, TimelineCategory } from '../../types';
 import { SectionView } from '../components/section-views/SectionView';
 
@@ -306,24 +307,8 @@ export function Review() {
             className="flex-1 overflow-y-auto"
           >
             {activeTab === 'map' && (
-              <div className="h-full relative flex items-center justify-center" style={{ background: 'var(--subcard)' }}>
-                <div
-                  className="absolute top-4 right-4 bg-surface border border-border px-3 py-2 text-xs"
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                >
-                  <div className="text-foreground-secondary">GPS</div>
-                  <div className="text-foreground">34.0522, -118.2437</div>
-                </div>
-                <div className="flex flex-col items-center gap-3 text-foreground-secondary">
-                  <MapPin className="w-8 h-8" aria-hidden />
-                  <div className="text-xs tracking-wide">MAP VIEW</div>
-                  <div
-                    className="text-[11px] text-center px-8"
-                    style={{ fontFamily: 'var(--font-mono)' }}
-                  >
-                    Route playback isn't wired up in this build. Use the timeline to step through events.
-                  </div>
-                </div>
+              <div className="h-full relative">
+                <AmbulanceSimulation mode="qa-review" />
               </div>
             )}
 
