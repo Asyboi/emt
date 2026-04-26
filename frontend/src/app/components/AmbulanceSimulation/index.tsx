@@ -14,6 +14,9 @@ import type { SimulationEvent, MapMode } from './types';
 interface AmbulanceSimulationProps {
   mode?: MapMode;
   onAllConfirmed?: () => void;
+  // URL of the case's bodycam video. When provided, EventCallouts plays this
+  // video seeked to `event.timestamp` instead of showing a placeholder.
+  caseVideoUrl?: string;
 }
 
 const FOLLOWING_ZOOM = 17;
@@ -22,6 +25,7 @@ const FOLLOWING_PITCH = 60;
 export function AmbulanceSimulation({
   mode = 'qa-review',
   onAllConfirmed,
+  caseVideoUrl,
 }: AmbulanceSimulationProps) {
   const [events, setEvents] = useState<SimulationEvent[]>(() =>
     SIMULATION_EVENTS.map((e) => ({
@@ -313,6 +317,7 @@ export function AmbulanceSimulation({
           anchor={activeEventAnchor}
           containerSize={containerSize}
           mode={mode}
+          caseVideoUrl={caseVideoUrl}
           onConfirm={handleConfirm}
           onSkip={handleSkip}
           onDismiss={handleDismiss}

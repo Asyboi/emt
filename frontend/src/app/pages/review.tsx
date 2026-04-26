@@ -308,7 +308,10 @@ export function Review() {
           >
             {activeTab === 'map' && (
               <div className="h-full relative">
-                <AmbulanceSimulation mode="qa-review" />
+                <AmbulanceSimulation
+                  mode="qa-review"
+                  caseVideoUrl={`${API_BASE}/api/cases/${resolvedId}/video`}
+                />
               </div>
             )}
 

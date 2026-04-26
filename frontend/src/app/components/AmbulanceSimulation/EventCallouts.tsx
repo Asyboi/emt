@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { SimulationEvent, MapMode } from './types';
 
 interface EventCalloutsProps {
@@ -5,6 +6,10 @@ interface EventCalloutsProps {
   anchor: { x: number; y: number } | null;
   containerSize: { w: number; h: number };
   mode: MapMode;
+  // Case bodycam video URL. When set, the left card renders an actual <video>
+  // seeked to `event.timestamp`. When undefined (no case video available), the
+  // card falls back to the original placeholder.
+  caseVideoUrl?: string;
   onConfirm: (eventId: string) => void;
   onSkip: () => void;
   onDismiss: () => void;
@@ -42,10 +47,42 @@ export function EventCallouts({
   anchor,
   containerSize,
   mode,
+  caseVideoUrl,
   onConfirm,
   onSkip,
   onDismiss,
 }: EventCalloutsProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // When the active event changes, seek the video to event.timestamp and play.
+  // Browsers won't let us seek before metadata loads, so wait on `loadedmetadata`
+  // when the video isn't ready yet.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const seekAndPlay = () => {
+      try {
+        v.currentTime = event.timestamp;
+      } catch {
+        // some browsers throw if duration isn't known yet — loadedmetadata retry below
+      }
+      // muted autoplay is allowed by default in modern browsers
+      v.play().catch(() => {
+        // user gesture required — leave the video paused on the seeked frame
+      });
+    };
+    if (v.readyState >= 1 /* HAVE_METADATA */) {
+      seekAndPlay();
+    } else {
+      const onMeta = () => {
+        seekAndPlay();
+        v.removeEventListener('loadedmetadata', onMeta);
+      };
+      v.addEventListener('loadedmetadata', onMeta);
+      return () => v.removeEventListener('loadedmetadata', onMeta);
+    }
+  }, [event.id, event.timestamp]);
+
   if (!anchor || !containerSize.w) return null;
   const s = SEVERITY_STYLES[event.severity];
 
@@ -108,35 +145,59 @@ export function EventCallouts({
 
       {/* Video card — left */}
       <div
-        className={`absolute rounded-xl overflow-hidden shadow-2xl border border-border ${s.bg}`}
+        className="absolute rounded-xl overflow-hidden shadow-2xl border border-border"
         style={{
           left: videoLeft,
           top: cardTop,
           width: CARD_W,
           height: CARD_H,
-          background: 'var(--surface)',
+          background: '#000',
         }}
       >
-        <div
-          className={`relative w-full h-full flex flex-col items-center justify-center ${s.bg}`}
-        >
-          <div className="text-4xl mb-2">{s.icon}</div>
-          <div className="text-xs text-foreground-secondary text-center px-4 font-mono">
-            {event.videoUrl.split('/').pop()}
+        {caseVideoUrl ? (
+          <div className="relative w-full h-full">
+            <video
+              ref={videoRef}
+              src={caseVideoUrl}
+              muted
+              playsInline
+              preload="metadata"
+              controls
+              className="w-full h-full object-cover"
+            />
+            <div
+              className="absolute top-2 left-2 text-[10px] tracking-wider px-2 py-0.5 rounded font-mono"
+              style={{
+                background: 'rgba(0,0,0,0.55)',
+                color: '#fff',
+              }}
+            >
+              t={event.timestamp}s
+            </div>
           </div>
-          <div className="text-xs text-foreground-secondary mt-1 font-mono">
-            t={event.timestamp}s
-          </div>
+        ) : (
           <div
-            className="absolute top-2 left-2 text-xs px-2 py-0.5 rounded"
-            style={{
-              background: 'var(--border)',
-              color: 'var(--foreground-secondary)',
-            }}
+            className={`relative w-full h-full flex flex-col items-center justify-center ${s.bg}`}
+            style={{ background: 'var(--surface)' }}
           >
-            VIDEO PLACEHOLDER
+            <div className="text-4xl mb-2">{s.icon}</div>
+            <div className="text-xs text-foreground-secondary text-center px-4 font-mono">
+              {event.videoUrl.split('/').pop()}
+            </div>
+            <div className="text-xs text-foreground-secondary mt-1 font-mono">
+              t={event.timestamp}s
+            </div>
+            <div
+              className="absolute top-2 left-2 text-xs px-2 py-0.5 rounded"
+              style={{
+                background: 'var(--border)',
+                color: 'var(--foreground-secondary)',
+              }}
+            >
+              VIDEO PLACEHOLDER
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Description card — right */}
