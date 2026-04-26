@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.cases import router as cases_router
+from app.api.pcr_draft import router as pcr_draft_router
 from app.api.pipeline import router as pipeline_router
 from app.case_loader import migrate_legacy_aar_caches
 from app.config import settings
@@ -27,6 +28,7 @@ app.add_middleware(
 
 app.include_router(cases_router, prefix="/api")
 app.include_router(pipeline_router, prefix="/api")
+app.include_router(pcr_draft_router, prefix="/api")
 
 
 @app.get("/health")

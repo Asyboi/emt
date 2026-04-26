@@ -332,6 +332,7 @@ class PipelineStage(str, Enum):
     PROTOCOL_CHECK = "protocol_check"
     FINDINGS = "findings"
     DRAFTING = "drafting"
+    PCR_DRAFTING = "pcr_drafting"  # pre-pipeline auto-drafter; not used by orchestrator
 
 
 class PipelineProgress(BaseModel):
@@ -340,3 +341,24 @@ class PipelineProgress(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
+
+
+class PCRDraftStatus(str, Enum):
+    PENDING_REVIEW = "pending_review"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+
+
+class PCRDraft(BaseModel):
+    case_id: str
+    generated_at: datetime
+    status: PCRDraftStatus = PCRDraftStatus.PENDING_REVIEW
+    video_event_count: int = 0
+    audio_event_count: int = 0
+    total_event_count: int = 0
+    draft_markdown: str
+    unconfirmed_count: int = 0
+    confirmed_by: Optional[str] = None
+    confirmed_at: Optional[datetime] = None
+    emt_edits_made: bool = False
+    error: Optional[str] = None

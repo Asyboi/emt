@@ -335,6 +335,214 @@ AUDIO_EVENTS_USER_TEMPLATE = """Extract clinical events from this dispatch audio
 Use the extract_audio_events tool to return your structured output."""
 
 
+PCR_DRAFT_SYSTEM = """You are a clinical documentation assistant for EMS quality improvement. \
+Your job is to draft a Patient Care Report (PCR) in a specific plain-text format based on \
+evidence extracted from bodycam video and radio/on-scene audio analysis.
+
+Rules:
+- Write only what is directly evidenced by the video or audio events provided
+- Use CAD timestamps as the authoritative source for all unit timing fields
+- For any clinical detail not evidenced by video or audio, write [UNCONFIRMED]
+- Write in past tense, third person clinical style matching the example format exactly
+- Keep intervention timestamps precise to the second where evidence supports it
+- Do not invent vital signs, patient demographics, medication lot numbers, or crew identifiers
+- Flag every intervention that appears in only one source (video OR audio, not both) \
+with [UNCONFIRMED] appended inline
+- Interventions confirmed by BOTH video and audio get no flag
+- Follow the section headers, separator lines, and formatting exactly as shown in the template
+- The output must be plain text — no markdown, no bullet asterisks, no headers with #"""
+
+
+PCR_DRAFT_USER_TEMPLATE = """Draft a Patient Care Report for this EMS incident using \
+the exact format shown below. Replace all placeholder values with evidence from the \
+video and audio events. Write [UNCONFIRMED] for anything not evidenced.
+
+CAD DATA:
+{cad_summary}
+
+VIDEO EVENTS ({video_count} extracted):
+{video_events_json}
+
+AUDIO EVENTS ({audio_count} extracted):
+{audio_events_json}
+
+Output the PCR in this exact format — preserve every separator line, every section \
+header, every label exactly as shown:
+
+PATIENT CARE REPORT
+Report Type: EMS Patient Care Report
+CAD Incident ID: {incident_id}
+PCR Number: PCR-{pcr_number}
+Date of Service: {date_of_service}
+
+============================================================
+AGENCY / UNIT INFORMATION
+============================================================
+
+EMS Agency: [UNCONFIRMED]
+Unit ID: [UNCONFIRMED]
+Crew:
+- Paramedic: [UNCONFIRMED]
+- EMT: [UNCONFIRMED]
+
+Incident Borough: {borough}
+Dispatch Area: {dispatch_area}
+ZIP Code: {zipcode}
+Police Precinct: {precinct}
+
+============================================================
+DISPATCH INFORMATION
+============================================================
+
+Initial Call Type: {initial_call_type}
+Initial Severity Level: {initial_severity}
+Final Call Type: {final_call_type}
+Final Severity Level: {final_severity}
+
+Dispatch Complaint:
+{dispatch_complaint}
+
+Call Notes:
+{call_notes}
+
+============================================================
+TIMES
+============================================================
+
+Incident Date/Time:          {incident_datetime}
+First Assignment:            {first_assignment}
+Unit Activated:              {first_activation}
+Unit Arrived On Scene:       {first_on_scene}
+Departed Scene To Hospital:  {first_to_hosp}
+Arrived At Hospital:         {first_hosp_arrival}
+Incident Closed:             {incident_close}
+
+Dispatch Response Time: {dispatch_seconds} seconds
+Incident Response Time: {incident_seconds} seconds
+Travel Time To Scene: {travel_seconds} seconds
+
+============================================================
+PATIENT INFORMATION
+============================================================
+
+Patient Name: [UNCONFIRMED]
+Age: [UNCONFIRMED]
+Sex: [UNCONFIRMED]
+DOB: [UNCONFIRMED]
+Address: {borough}, NY {zipcode}
+Patient ID: Not available at time of care
+
+============================================================
+CHIEF COMPLAINT
+============================================================
+
+{chief_complaint}
+
+============================================================
+HISTORY OF PRESENT ILLNESS
+============================================================
+
+{history_of_present_illness}
+
+============================================================
+PAST MEDICAL HISTORY
+============================================================
+
+[UNCONFIRMED]
+
+============================================================
+MEDICATIONS
+============================================================
+
+[UNCONFIRMED]
+
+============================================================
+ALLERGIES
+============================================================
+
+[UNCONFIRMED]
+
+============================================================
+INITIAL ASSESSMENT
+============================================================
+
+{initial_assessment}
+
+============================================================
+VITAL SIGNS
+============================================================
+
+{vital_signs}
+
+============================================================
+TREATMENTS / INTERVENTIONS
+============================================================
+
+{interventions}
+
+============================================================
+MEDICATIONS ADMINISTERED
+============================================================
+
+{medications_administered}
+
+============================================================
+PROCEDURES
+============================================================
+
+{procedures}
+
+============================================================
+TRANSPORT INFORMATION
+============================================================
+
+Transported: {transported}
+Destination: [UNCONFIRMED]
+Destination Type: Emergency Department
+Transport Priority: Emergency
+Patient Position: Supine
+Condition During Transport: [UNCONFIRMED]
+Condition At Transfer: [UNCONFIRMED]
+
+Reason For Destination: [UNCONFIRMED]
+
+============================================================
+TRANSFER OF CARE
+============================================================
+
+Care transferred to emergency department staff on arrival.
+Verbal report given to ED physician and nursing staff.
+
+Patient transferred with: [UNCONFIRMED]
+
+============================================================
+NARRATIVE
+============================================================
+
+{narrative}
+
+============================================================
+DISPOSITION
+============================================================
+
+Incident Disposition Code: {disposition_code}
+Patient Disposition: [UNCONFIRMED]
+Final Patient Condition: [UNCONFIRMED]
+ROSC Achieved: [UNCONFIRMED]
+Transported To Hospital: {transported}
+Crew Cleared: {incident_close}
+
+============================================================
+SIGNATURES
+============================================================
+
+Primary Provider: [UNCONFIRMED]
+Partner: [UNCONFIRMED]
+Receiving Facility Signature: [UNCONFIRMED]
+Patient Signature: [UNCONFIRMED]
+Report Completed: [UNCONFIRMED]"""
+
+
 VIDEO_EVENTS_SYSTEM = """You are an EMS quality analyst watching body-cam footage from a clinical incident.
 
 Identify visually observable clinical events (CPR start/pause, defibrillation, airway insertion, IV access, medication push, rhythm checks shown on the monitor, patient response). For each, provide:

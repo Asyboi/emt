@@ -1,0 +1,263 @@
+# Merge Agent 2 + Agent 3 in Reconciliation Stage
+
+## Context
+
+`backend/app/pipeline/reconciliation.py` currently runs two parallel per-cluster Haiku calls — Agent 2 (discrepancy scoring) and Agent 3 (canonicalization) — via two outer `asyncio.gather`s (reconciliation.py:486-495). For N clusters that's 2N requests, fanned out concurrently under a single shared `Semaphore(5)`. Both calls take the same input (`cluster_events_json` for the same cluster), so they double the request budget without doubling the information available to the model.
+
+During the recent QI run we tripped a `RateLimitError` on cluster `c007` because the burst exceeded Anthropic's per-minute cap, and tenacity's 3-retry / max-10s backoff window was shorter than the 60s rate-limit refill. The graceful fallback (`_deterministic_score_fallback`) caught it, so output was preserved, but the underlying dual-call pattern is the root cause.
+
+**Goal:** collapse Agent 2 + Agent 3 into a single Haiku call per cluster (`Agent R — review`) that returns both the discrepancy score *and* the canonical entry in one tool_use. This halves the request count, removes the second outer gather (so peak in-flight drops from 10 → 5), and slightly improves output coherence since both judgments are emitted from one model context.
+
+The existing per-cluster fallbacks, semaphore gating, exception handling, and the public `reconcile()` signature stay untouched — Agent 1 (clustering) and Agent 4 (Sonnet critic) are not affected.
+
+## Scope
+
+1. Add merged prompt + tool to `backend/app/prompts.py`.
+2. Replace `_score_cluster` + `_canonicalize_cluster` with a single `_review_cluster` in `backend/app/pipeline/reconciliation.py`.
+3. Update the `reconcile()` orchestration to call `_review_cluster` once per cluster instead of fanning out two gathers.
+4. Update the module docstring (`4-agent` → `3-agent`).
+5. Remove now-unused imports of the old score/canon prompts and tools.
+6. Optionally delete the old `RECONCILIATION_SCORE_*`, `RECONCILIATION_CANON_*`, `SCORE_DISCREPANCY_TOOL`, `CANONICALIZE_CLUSTER_TOOL` from `prompts.py` (nothing else references them).
+
+**Out of scope:** Agent 1 clustering, Agent 4 critic, the `_gated`/`_CLUSTER_SEM` plumbing, tenacity retry config, prompt content of Agent 1/4, schemas, the public `reconcile()` signature.
+
+## Implementation
+
+### Step 1 — Add merged prompt & tool (`backend/app/prompts.py`)
+
+Add three new constants after `CANONICALIZE_CLUSTER_TOOL` (~prompts.py:808) and before `RECONCILIATION_CRITIC_SYSTEM` (~prompts.py:811).
+
+```python
+RECONCILIATION_REVIEW_SYSTEM = """You are an EMS quality analyst. Given a cluster of events that all represent the same real-world clinical action, perform two tasks in one pass:
+
+1. Score the cluster for discrepancies a QA reviewer should examine.
+2. Produce a canonical description and classification for the timeline.
+
+Discrepancy types:
+- timing: agree on WHAT, but timestamps differ by more than 10 seconds across sources.
+- clinical: disagree on WHAT — different drug doses, different interventions, conflicting vital values.
+- phantom: only one source (typically the PCR) documents an action that should have been observable by another source.
+- missing: only non-PCR sources document this action — the PCR has no counterpart.
+- none: no discrepancy; sources are consistent.
+
+Scoring rules:
+- discrepancy_score in [0.0, 1.0]: 0.0 = none, 1.0 = severe.
+  - timing: min(1.0, timestamp_spread_seconds / 120.0).
+  - clinical: always >= 0.7.
+  - phantom/missing: 0.4 routine; 0.8 for life-saving interventions (defibrillation, epinephrine, airway).
+  - none: 0.0.
+- discrepancy_reasoning: one neutral sentence citing specific evidence (timestamps or descriptions). No recommendations.
+
+Canonicalization rules:
+- canonical_description: concise, neutral, clinically precise; max 120 chars. Include doses if mentioned in any source. If sources conflict on a dose, describe the conflict briefly.
+- event_type: most specific EventType that fits; prefer the PCR source's type when in doubt.
+- canonical_timestamp_seconds: use the centroid provided. Do not recalculate.
+- match_confidence: confidence in [0,1] that all cluster events describe the same action. 1.0 for a solo event or clearly identical multi-source cluster; 0.5–0.8 when descriptions are only approximately similar."""
+
+RECONCILIATION_REVIEW_USER_TEMPLATE = """Review this cluster: score it for discrepancies AND produce its canonical entry.
+
+Cluster ID: {cluster_id}
+Centroid timestamp (seconds): {centroid_timestamp_seconds}
+
+<cluster_events>
+{cluster_events_json}
+</cluster_events>
+
+Use the review_cluster tool to return both outputs in one call."""
+
+REVIEW_CLUSTER_TOOL: dict[str, Any] = {
+    "name": "review_cluster",
+    "description": "Score a matched event cluster for discrepancies AND produce its canonical timeline entry, in a single call.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "cluster_id": {"type": "string", "description": "Echo back the cluster_id."},
+            "discrepancy_score": {"type": "number", "description": "0.0 (none) to 1.0 (severe)."},
+            "discrepancy_type": {"type": "string", "enum": [t.value for t in DiscrepancyType]},
+            "discrepancy_reasoning": {"type": "string", "description": "One neutral sentence citing specific evidence."},
+            "canonical_timestamp_seconds": {"type": "number", "description": "Use the provided centroid value. Do not recalculate."},
+            "event_type": {"type": "string", "enum": [e.value for e in EventType]},
+            "canonical_description": {"type": "string", "description": "Concise neutral clinical description. Max 120 characters."},
+            "match_confidence": {"type": "number", "description": "[0,1] confidence the cluster events describe one action."},
+        },
+        "required": [
+            "cluster_id",
+            "discrepancy_score",
+            "discrepancy_type",
+            "discrepancy_reasoning",
+            "canonical_timestamp_seconds",
+            "event_type",
+            "canonical_description",
+            "match_confidence",
+        ],
+    },
+}
+```
+
+### Step 2 — Replace `_score_cluster` + `_canonicalize_cluster` with `_review_cluster` (`backend/app/pipeline/reconciliation.py`)
+
+Replace both functions (currently at reconciliation.py:327-404) with one:
+
+```python
+async def _review_cluster(
+    cluster: EventCluster, by_id: dict[str, Event]
+) -> tuple[ScoredCluster, DraftTimelineEntry]:
+    """Agent R: one Haiku call that scores AND canonicalizes a cluster."""
+    response = await claude_haiku(
+        system=RECONCILIATION_REVIEW_SYSTEM,
+        messages=[
+            {
+                "role": "user",
+                "content": RECONCILIATION_REVIEW_USER_TEMPLATE.format(
+                    cluster_id=cluster.cluster_id,
+                    centroid_timestamp_seconds=cluster.centroid_timestamp_seconds,
+                    cluster_events_json=_serialize_cluster_events(cluster, by_id),
+                ),
+            }
+        ],
+        tools=[REVIEW_CLUSTER_TOOL],
+        max_tokens=1024,  # bumped from 512 to fit both outputs
+    )
+
+    tool_use = next(
+        (b for b in response["content"] if b["type"] == "tool_use"), None
+    )
+    if tool_use is None:
+        logger.warning(
+            "Agent R (review_cluster) returned no tool_use for cluster %s — using deterministic fallbacks",
+            cluster.cluster_id,
+        )
+        return (
+            _deterministic_score_fallback(cluster, by_id),
+            _first_event_fallback(cluster, by_id),
+        )
+
+    raw = tool_use["input"]
+    scored = ScoredCluster(
+        cluster_id=cluster.cluster_id,
+        event_ids=cluster.event_ids,
+        centroid_timestamp_seconds=cluster.centroid_timestamp_seconds,
+        source_types=cluster.source_types,
+        discrepancy_score=float(raw["discrepancy_score"]),
+        discrepancy_type=DiscrepancyType(raw["discrepancy_type"]),
+        discrepancy_reasoning=raw["discrepancy_reasoning"],
+    )
+    draft = DraftTimelineEntry(
+        cluster_id=cluster.cluster_id,
+        event_ids=cluster.event_ids,
+        canonical_timestamp_seconds=float(raw["canonical_timestamp_seconds"]),
+        event_type=EventType(raw["event_type"]),
+        canonical_description=raw["canonical_description"],
+        match_confidence=float(raw["match_confidence"]),
+    )
+    return scored, draft
+```
+
+Keep `_deterministic_score_fallback` and `_first_event_fallback` as-is — they are reused both for the no-tool-use branch above and for the per-cluster exception branch in `reconcile()`.
+
+### Step 3 — Update the `reconcile()` orchestration (reconciliation.py:484-519)
+
+Replace the dual `asyncio.gather` block with a single fan-out that returns tuples, then demux:
+
+```python
+    # Agent R — Per-cluster review (parallel, Haiku) — one call per cluster
+    raw_results = await asyncio.gather(
+        *[_gated(_review_cluster(c, by_id)) for c in clusters],
+        return_exceptions=True,
+    )
+
+    scored_list: list[ScoredCluster] = []
+    draft_list: list[DraftTimelineEntry] = []
+    for cluster, result in zip(clusters, raw_results):
+        if isinstance(result, Exception):
+            logger.warning(
+                "Agent R review failed for cluster %s — using deterministic fallbacks: %s",
+                cluster.cluster_id,
+                result,
+            )
+            scored_list.append(_deterministic_score_fallback(cluster, by_id))
+            draft_list.append(_first_event_fallback(cluster, by_id))
+        else:
+            scored, draft = result
+            scored_list.append(scored)
+            draft_list.append(draft)
+```
+
+### Step 4 — Update imports and module docstring (reconciliation.py:1-37)
+
+Replace lines 1-12 docstring's "4-agent sequential chain" / "Agent 2" / "Agent 3" block with:
+
+```
+3-agent reconciliation chain:
+  Agent 1 (Haiku)  — semantic clustering of all events
+  Agent R (Haiku)  — per-cluster combined scoring + canonicalization (parallel)
+  Agent 4 (Sonnet) — critic verification pass → list[TimelineEntry]
+```
+
+In the import block from `app.prompts` (lines 24-37), remove:
+- `CANONICALIZE_CLUSTER_TOOL`
+- `RECONCILIATION_CANON_SYSTEM`
+- `RECONCILIATION_CANON_USER_TEMPLATE`
+- `RECONCILIATION_SCORE_SYSTEM`
+- `RECONCILIATION_SCORE_USER_TEMPLATE`
+- `SCORE_DISCREPANCY_TOOL`
+
+Add:
+- `RECONCILIATION_REVIEW_SYSTEM`
+- `RECONCILIATION_REVIEW_USER_TEMPLATE`
+- `REVIEW_CLUSTER_TOOL`
+
+### Step 5 — Delete the now-unused prompts (`backend/app/prompts.py`)
+
+Delete `RECONCILIATION_SCORE_SYSTEM`, `RECONCILIATION_SCORE_USER_TEMPLATE`, `SCORE_DISCREPANCY_TOOL`, `RECONCILIATION_CANON_SYSTEM`, `RECONCILIATION_CANON_USER_TEMPLATE`, `CANONICALIZE_CLUSTER_TOOL` (lines 694-808). Confirm with `grep -rn` first that no other module imports them — only `reconciliation.py` should.
+
+```bash
+grep -rn "RECONCILIATION_SCORE\|RECONCILIATION_CANON\|SCORE_DISCREPANCY_TOOL\|CANONICALIZE_CLUSTER_TOOL" backend/
+```
+
+If anything outside `reconciliation.py` and `prompts.py` matches, leave the constants in place and just stop importing them.
+
+## Critical files
+
+- `backend/app/pipeline/reconciliation.py` — Agents 2/3 collapse into one `_review_cluster`; orchestrator block at lines 484-519 simplifies.
+- `backend/app/prompts.py` — add `RECONCILIATION_REVIEW_*` + `REVIEW_CLUSTER_TOOL`; delete the six replaced constants.
+- `backend/app/llm_clients.py:24-41` — `claude_haiku` (no change, but this is the function called).
+- `backend/tests/test_reconciliation.py` — existing test exercises the public `reconcile()` API, so it should pass unchanged. The test is already API-key-gated.
+
+## Verification
+
+```bash
+cd backend
+
+# 1. Confirm no stale references survive
+grep -rn "RECONCILIATION_SCORE\|RECONCILIATION_CANON\|SCORE_DISCREPANCY_TOOL\|CANONICALIZE_CLUSTER_TOOL\|_score_cluster\|_canonicalize_cluster" app/
+# expected: zero matches outside the deletions in prompts.py / reconciliation.py
+
+# 2. Lint
+uv run ruff check app tests
+
+# 3. Existing test suite holds
+uv run pytest -v
+# expected: same pass/skip counts as baseline (30 passed / 3 skipped after the PCR auto-drafter merge)
+
+# 4. End-to-end smoke against case_01 — confirms reconcile() still returns a non-empty timeline
+uv run python scripts/run_pipeline.py case_01 2>&1 | tee /tmp/recon-smoke.log
+grep -E "Agent (R|2|3) .* failed" /tmp/recon-smoke.log
+# expected: zero rate-limit fallbacks under normal conditions; if any appear, only the new "Agent R review failed for cluster ..." form should match (NOT "Agent 2 scoring failed" or "Agent 3 canonicalization failed")
+
+# 5. Optional: cluster count sanity — N clusters should produce ~N requests for the review stage instead of 2N
+# (manual: count 'Agent R' log lines vs cluster count)
+```
+
+**Acceptance criteria:**
+- Public `reconcile()` signature unchanged.
+- `pytest` baseline holds.
+- A successful case_01 run shows roughly half as many Haiku requests during reconciliation.
+- Per-cluster fallback path still works: simulate by temporarily forcing `claude_haiku` to raise, confirm `_deterministic_score_fallback` and `_first_event_fallback` are both applied for the failing cluster.
+- The merged tool_use returns within the bumped 1024 max_tokens for typical clusters; if responses get truncated, raise to 1536.
+
+## Notes / risks
+
+- The combined prompt is longer than either individual one. Token budget grows by ~40% per call but request count is halved, so net token usage drops slightly.
+- `match_confidence` and `discrepancy_score` are now decided by the same model context — no risk of the two judgments contradicting each other on a clinical/timing edge case (a small quality win, not just a perf win).
+- If the model occasionally truncates the combined output, increase `max_tokens` to 1536 before considering structural changes.
