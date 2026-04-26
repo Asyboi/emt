@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
 
@@ -16,26 +15,7 @@ export function DemoNav() {
   const [params] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const urlActive = params.get('demo') === '1';
-  const stickyActive =
-    typeof window !== 'undefined' && sessionStorage.getItem('calyx-demo') === '1';
-  const active = urlActive || stickyActive;
-
-  useEffect(() => {
-    if (urlActive) {
-      sessionStorage.setItem('calyx-demo', '1');
-    }
-  }, [urlActive]);
-
-  // If the user is in demo mode but an internal navigation dropped the
-  // ?demo=1 flag, restore it on the URL so links stay consistent.
-  useEffect(() => {
-    if (active && !urlActive && typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('demo', '1');
-      window.history.replaceState({}, '', url.toString());
-    }
-  }, [active, urlActive, location.pathname, location.search]);
+  const active = params.get('demo') === '1';
 
   if (!active) return null;
 
@@ -46,7 +26,6 @@ export function DemoNav() {
   const withDemo = (to: string) => `${to}${to.includes('?') ? '&' : '?'}demo=1`;
 
   const exit = () => {
-    sessionStorage.removeItem('calyx-demo');
     navigate('/', { replace: true });
   };
 
