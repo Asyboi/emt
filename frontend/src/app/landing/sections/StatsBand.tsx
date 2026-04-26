@@ -15,7 +15,7 @@ export function StatsBand() {
   return (
     <section
       style={{
-        padding: "120px 0",
+        padding: "clamp(72px, 12vh, 120px) 0",
         borderTop: "1px solid var(--border)",
         borderBottom: "1px solid var(--border)",
       }}

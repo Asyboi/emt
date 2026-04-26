@@ -28,7 +28,7 @@ const CASES = [
 export function UseCases() {
   return (
     <section style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="container" style={{ paddingTop: 120, paddingBottom: 80 }}>
+      <div className="container" style={{ paddingTop: "clamp(72px, 12vh, 120px)", paddingBottom: "clamp(48px, 8vh, 80px)" }}>
         <EditorialHeader
           num="05"
           label="SOLUTIONS"
@@ -45,7 +45,7 @@ export function UseCases() {
           key={i}
           style={{
             borderTop: "1px solid var(--border)",
-            padding: "70px 0",
+            padding: "clamp(48px, 8vh, 70px) 0",
             background: i % 2 === 1 ? "var(--surface)" : "var(--bg)",
           }}
         >
@@ -55,8 +55,8 @@ export function UseCases() {
                 className="usecase-grid"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "200px 1fr 320px",
-                  gap: 64,
+                  gridTemplateColumns: "minmax(140px, 200px) 1fr minmax(220px, 320px)",
+                  gap: "clamp(28px, 4.5vw, 64px)",
                   alignItems: "start",
                 }}
               >

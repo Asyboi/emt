@@ -7,11 +7,11 @@ export function Hero() {
     <section
       style={{
         position: "relative",
-        minHeight: "100vh",
+        minHeight: "100svh",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        paddingTop: 100,
+        paddingTop: "clamp(72px, 9vh, 100px)",
       }}
     >
       <div
@@ -30,13 +30,23 @@ export function Hero() {
         }}
       />
 
-      <div style={{ flex: 1, display: "flex", alignItems: "center", paddingTop: 60 }}>
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          paddingTop: "clamp(24px, 4vh, 60px)",
+        }}
+      >
         <div
           className="container"
           style={{ position: "relative", zIndex: 2, width: "100%" }}
         >
           <Reveal>
-            <div className="section-marker" style={{ marginBottom: 36 }}>
+            <div
+              className="section-marker"
+              style={{ marginBottom: "clamp(20px, 3vh, 36px)" }}
+            >
               <span>INC-2026 · A PLATFORM FOR EMS</span>
             </div>
           </Reveal>
@@ -44,8 +54,8 @@ export function Hero() {
           <h1
             className="display"
             style={{
-              fontSize: "clamp(56px, 11vw, 180px)",
-              marginBottom: 56,
+              fontSize: "clamp(40px, min(9vw, 13vh), 160px)",
+              marginBottom: "clamp(28px, 4vh, 56px)",
               maxWidth: "13ch",
             }}
           >
@@ -63,16 +73,16 @@ export function Hero() {
               style={{
                 display: "grid",
                 gridTemplateColumns: "1.2fr 1fr",
-                gap: 80,
+                gap: "clamp(32px, 5vw, 80px)",
                 alignItems: "end",
               }}
             >
               <p
                 style={{
-                  fontSize: 18,
+                  fontSize: "clamp(15px, 1.4vw, 18px)",
                   color: "var(--text-2)",
                   lineHeight: 1.5,
-                  maxWidth: 540,
+                  maxWidth: "55ch",
                 }}
               >
                 <ScrollLitText>
@@ -115,10 +125,10 @@ export function Hero() {
         style={{
           position: "relative",
           zIndex: 2,
-          paddingBottom: 28,
-          paddingTop: 24,
+          paddingBottom: "clamp(16px, 2.4vh, 28px)",
+          paddingTop: "clamp(14px, 2vh, 24px)",
           borderTop: "1px solid var(--border)",
-          marginTop: 64,
+          marginTop: "clamp(32px, 6vh, 64px)",
         }}
       >
         <div

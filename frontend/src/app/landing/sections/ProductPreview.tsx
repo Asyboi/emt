@@ -20,7 +20,7 @@ export function ProductPreview() {
     <section
       id="preview"
       style={{
-        padding: "120px 0 0",
+        padding: "clamp(72px, 12vh, 120px) 0 0",
         borderBottom: "1px solid var(--border)",
         background: "var(--surface)",
       }}
@@ -34,7 +34,7 @@ export function ProductPreview() {
         />
       </div>
 
-      <div style={{ padding: "0 40px" }}>
+      <div style={{ padding: "0 clamp(20px, 3vw, 40px)" }}>
         <Reveal>
           <div
             style={{
@@ -123,7 +123,7 @@ export function ProductPreview() {
               ))}
             </div>
 
-            <div style={{ padding: 24, minHeight: 540 }}>
+            <div style={{ padding: "clamp(16px, 2vw, 24px)", minHeight: "clamp(380px, 56vh, 540px)" }}>
               {tab === "timeline" && <TimelineView />}
               {tab === "protocol" && <ProtocolView />}
               {tab === "report" && <ReportView />}
@@ -131,7 +131,7 @@ export function ProductPreview() {
           </div>
         </Reveal>
       </div>
-      <div style={{ height: 120 }} />
+      <div style={{ height: "clamp(72px, 12vh, 120px)" }} />
     </section>
   );
 }

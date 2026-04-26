@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Loader2, AlertTriangle, CheckCircle2, Circle } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { useIncident } from '../../data/hooks';
-import { getDataSource } from '../../data/source';
 import { useProcessingStream } from '../../data/sse';
 import type { PipelineStage, PipelineStatus } from '../../types/backend';
 import type { AgentStatus, AgentTile, PipelineFinding } from '../../types';
@@ -307,33 +305,27 @@ export function Processing() {
   const navigate = useNavigate();
   const demoFlag = searchParams.get('demo') === '1';
 
-  const isRemote = useMemo(() => getDataSource().mode === 'remote', []);
+  // Use the unified pipeline stream — it handles both local synthesis and
+  // remote SSE. Local mode replays a deterministic stage progression; remote
+  // mode streams real backend events.
+  const stream = useProcessingStream(caseId, { demo: demoFlag });
 
-  const localIncident = useIncident(isRemote ? undefined : caseId);
-  const remoteState = useProcessingStream(isRemote ? caseId : undefined, { demo: demoFlag });
-
-  // Auto-navigate to review on completion (remote only).
+  // Auto-navigate to review once the pipeline completes (in either mode).
   useEffect(() => {
-    if (isRemote && remoteState.isComplete && caseId) {
-      const t = window.setTimeout(() => navigate(`/review/${caseId}`), 2000);
+    if (stream.isComplete && caseId) {
+      const t = window.setTimeout(() => navigate(`/review/${caseId}`), 1600);
       return () => window.clearTimeout(t);
     }
-  }, [isRemote, remoteState.isComplete, caseId, navigate]);
+  }, [stream.isComplete, caseId, navigate]);
 
-  // Reconciliation sub-tile timed sequence.
-  // Index meaning: -1 = all waiting, 0..2 = that index active (lower indices complete),
-  // 3 = all complete. The timed chain advances on `running`; on `complete` jumps to 3.
-  const reconBackendStatus = isRemote
-    ? remoteState.stages.get('reconciliation')?.status
-    : 'complete';
+  // Reconciliation sub-tile timed sequence: drives the inner sub-agent chain
+  // when reconciliation is the running stage. -1 = waiting, 0..2 = that index
+  // active, 3 = all complete.
+  const reconStatus = stream.stages.get('reconciliation')?.status;
   const [reconSubIdx, setReconSubIdx] = useState<number>(-1);
 
   useEffect(() => {
-    if (!isRemote) {
-      setReconSubIdx(3);
-      return;
-    }
-    if (reconBackendStatus === 'running') {
+    if (reconStatus === 'running') {
       setReconSubIdx(0);
       const t1 = window.setTimeout(() => setReconSubIdx(1), RECON_SUB_STEP_MS);
       const t2 = window.setTimeout(() => setReconSubIdx(2), RECON_SUB_STEP_MS * 2);
@@ -342,12 +334,12 @@ export function Processing() {
         window.clearTimeout(t2);
       };
     }
-    if (reconBackendStatus === 'complete') {
+    if (reconStatus === 'complete') {
       setReconSubIdx(3);
     } else {
       setReconSubIdx(-1);
     }
-  }, [isRemote, reconBackendStatus]);
+  }, [reconStatus]);
 
   function subTileStatus(idx: number): AgentStatus {
     if (reconSubIdx === -1) return 'waiting';
@@ -365,38 +357,29 @@ export function Processing() {
     status: subTileStatus(i),
   }));
 
-  // Resolve stage status for any pipeline stage.
+  // Resolve stage status from the unified stream.
   function getStageStatus(stage: PipelineStage): AgentStatus {
-    if (!isRemote) return 'complete';
-    return pipelineStatusToAgentStatus(remoteState.stages.get(stage)?.status);
+    return pipelineStatusToAgentStatus(stream.stages.get(stage)?.status);
   }
 
-  // Header values
-  const elapsed = isRemote
-    ? remoteState.elapsedSeconds
-    : (localIncident.data?.pipeline.elapsedSeconds ?? 0);
-  const progress = isRemote
-    ? remoteState.progressPct
-    : (localIncident.data?.pipeline.progressPct ?? 100);
-  const overallStatus = isRemote
-    ? remoteState.error
-      ? 'ERROR'
-      : remoteState.isComplete
-        ? 'COMPLETE'
-        : 'ACTIVE'
-    : 'STATIC MOCK';
+  // Header values come from the live stream (local or remote).
+  const elapsed = stream.elapsedSeconds;
+  const progress = stream.progressPct;
+  const overallStatus = stream.error
+    ? 'ERROR'
+    : stream.isComplete
+      ? 'COMPLETE'
+      : 'ACTIVE';
 
-  // Findings strip (live from remote review once available; mock otherwise)
-  const findings: PipelineFinding[] = isRemote
-    ? (remoteState.review?.pipeline.findings ?? [])
-    : (localIncident.data?.pipeline.findings ?? []);
+  // Findings strip surfaces once the review arrives.
+  const findings: PipelineFinding[] = stream.review?.pipeline.findings ?? [];
 
-  const completeCount = isRemote
-    ? Array.from(remoteState.stages.values()).filter((s) => s.status === 'complete').length
-    : STAGE_CONFIG.length;
-  const activeCount = isRemote
-    ? Array.from(remoteState.stages.values()).filter((s) => s.status === 'running').length
-    : 0;
+  const completeCount = Array.from(stream.stages.values()).filter(
+    (s) => s.status === 'complete',
+  ).length;
+  const activeCount = Array.from(stream.stages.values()).filter(
+    (s) => s.status === 'running',
+  ).length;
   const flagCount = findings.filter((f) => f.type === 'warning').length;
 
   const hms = (s: number) =>
@@ -413,40 +396,7 @@ export function Processing() {
     );
   }
 
-  if (!isRemote && localIncident.error) {
-    return (
-      <div
-        role="alert"
-        className="h-screen bg-background flex flex-col items-center justify-center gap-2 px-6"
-      >
-        <div
-          className="text-xs tracking-[0.15em]"
-          style={{ fontFamily: 'var(--font-mono)', color: 'var(--destructive)' }}
-        >
-          COULDN'T LOAD INCIDENT
-        </div>
-        <div className="text-sm text-foreground-secondary max-w-md text-center">
-          {localIncident.error.message}. Refresh to retry, or check that the backend is running on port 8000.
-        </div>
-      </div>
-    );
-  }
-
-  if (!isRemote && (localIncident.loading || !localIncident.data)) {
-    return (
-      <div
-        role="status"
-        aria-live="polite"
-        className="h-screen bg-background flex items-center justify-center"
-      >
-        <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
-          Loading pipeline…
-        </div>
-      </div>
-    );
-  }
-
-  if (isRemote && remoteState.error) {
+  if (stream.error) {
     return (
       <div
         role="alert"
@@ -462,7 +412,7 @@ export function Processing() {
           className="text-sm text-foreground-secondary max-w-md text-center"
           style={{ fontFamily: 'var(--font-mono)' }}
         >
-          {remoteState.error}
+          {stream.error}
         </div>
       </div>
     );
@@ -616,17 +566,17 @@ export function Processing() {
           >
             ACTIVITY LOG
           </div>
-          {isRemote ? (
-            <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
-              Logs available after processing.
-            </div>
-          ) : (
+          {stream.review ? (
             <div className="flex flex-col gap-1">
-              {(localIncident.data?.pipeline.audioLogs ?? []).map((log, i) => (
+              {(stream.review.pipeline.audioLogs ?? []).map((log, i) => (
                 <div key={i} style={{ fontSize: 12, color: 'var(--text)' }}>
                   <span style={{ color: 'var(--text-2)' }}>[{log.timestamp}]</span> {log.message}
                 </div>
               ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
+              Logs available after processing.
             </div>
           )}
         </div>

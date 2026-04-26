@@ -4,13 +4,20 @@ import type { Case, QICaseReview } from '../types/backend';
 import { adaptCaseToSummary, adaptReview } from './adapters';
 import { API_BASE } from './api';
 
-// `local` reads from `src/mock/mock_data.ts`. `remote` is a stub that will
-// eventually call the FastAPI backend (cases + SSE pipeline). The mode is
-// resolved per call rather than at module load so the URL toggle takes effect
-// without a hot reload.
+// `local` reads from src/mock/mock_data.ts + src/mock/mock_pcr.ts and
+// synthesizes the pipeline in src/data/sse.ts (no backend needed).
+// `remote` calls the FastAPI backend.
+//
+// The mode is driven by VITE_LOCAL_MODE in frontend/.env.local:
+//   VITE_LOCAL_MODE=true   → local
+//   VITE_LOCAL_MODE=false  → remote (default if the variable is unset)
+//
+// A URL query (?local / ?remote) wins over the env var so you can flip a
+// single tab without restarting Vite. The mode is resolved per call so that
+// override takes effect immediately.
 export type DataSourceMode = 'local' | 'remote';
 
-const DEFAULT_MODE: DataSourceMode = 'local';
+const DEFAULT_MODE: DataSourceMode = 'remote';
 
 function urlOverride(): DataSourceMode | null {
   if (typeof window === 'undefined') return null;
@@ -21,9 +28,13 @@ function urlOverride(): DataSourceMode | null {
 }
 
 function envMode(): DataSourceMode | null {
-  const raw = import.meta.env.VITE_DATA_SOURCE;
-  if (raw === 'local' || raw === 'remote') return raw;
-  return null;
+  const raw = import.meta.env.VITE_LOCAL_MODE;
+  if (raw === undefined || raw === '') return null;
+  // Accept "true"/"1" (case-insensitive) as local; anything else (including
+  // "false"/"0") forces remote. Booleans flow through .env as strings.
+  const truthy = String(raw).trim().toLowerCase();
+  if (truthy === 'true' || truthy === '1') return 'local';
+  return 'remote';
 }
 
 export function resolveMode(): DataSourceMode {

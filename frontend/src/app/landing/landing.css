@@ -106,7 +106,7 @@
 .calyx-landing .container {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 40px;
+  padding: 0 clamp(20px, 3vw, 40px);
 }
 
 .calyx-landing .section-marker {
@@ -261,11 +261,7 @@
   }
 }
 
-@media (max-width: 900px) {
-  .calyx-landing .container {
-    padding: 0 24px;
-  }
-}
+/* container side padding is fluid via clamp() — no stepped override needed */
 
 @media (max-width: 700px) {
   .calyx-landing .nav-links {

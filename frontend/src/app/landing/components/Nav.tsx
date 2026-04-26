@@ -18,7 +18,7 @@ export function Nav() {
     left: 0,
     right: 0,
     zIndex: 50,
-    padding: "16px 40px",
+    padding: "clamp(12px, 1.5vh, 16px) clamp(20px, 3vw, 40px)",
     backdropFilter: "blur(12px)",
     WebkitBackdropFilter: "blur(12px)",
     background: scrolled ? "rgba(245,244,240,0.65)" : "rgba(245,244,240,0.5)",

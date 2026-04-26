@@ -24,7 +24,7 @@ const ROWS = [
 
 export function WhyDifferent() {
   return (
-    <section style={{ padding: "120px 0", borderBottom: "1px solid var(--border)" }}>
+    <section style={{ padding: "clamp(72px, 12vh, 120px) 0", borderBottom: "1px solid var(--border)" }}>
       <div className="container">
         <EditorialHeader
           num="06"
@@ -40,7 +40,7 @@ export function WhyDifferent() {
         />
         <div
           className="editorial-grid"
-          style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 64 }}
+          style={{ display: "grid", gridTemplateColumns: "minmax(120px, 200px) 1fr", gap: "clamp(32px, 5vw, 64px)" }}
         >
           <div />
           <Reveal>

@@ -35,7 +35,7 @@ export function Solution() {
   return (
     <section
       style={{
-        padding: "120px 0",
+        padding: "clamp(72px, 12vh, 120px) 0",
         borderBottom: "1px solid var(--border)",
         background: "var(--surface)",
       }}
@@ -58,7 +58,7 @@ export function Solution() {
           style={{
             display: "grid",
             gridTemplateColumns: "1.05fr 1fr",
-            gap: 56,
+            gap: "clamp(28px, 4.5vw, 56px)",
             alignItems: "stretch",
           }}
         >
