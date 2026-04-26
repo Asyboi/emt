@@ -21,6 +21,7 @@ remove them entirely) — they are scoped to the bring-up window.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -535,16 +536,29 @@ async def draft_qi_review(
     protocol_checks: list[ProtocolCheck],
     pcr_content: str,
 ) -> QICaseReview:
-    """Compose the full QI Case Review from upstream pipeline outputs."""
+    """Compose the full QI Case Review from upstream pipeline outputs.
 
-    header = await _draft_header(case, pcr_content, timeline)
-    clinical = await _draft_clinical_assessment(timeline, case.incident_type)
-    doc_quality = await _draft_documentation_quality(pcr_content, timeline)
-    recommendations = await _draft_recommendations(findings, clinical)
+    Sub-call dependency graph:
+        A (header), B (clinical), C (doc_quality)        — independent
+        D (recommendations) needs B
+        E (determination_rationale) needs B + C + computed determination
+
+    So the call schedule is two parallel waves:
+        Wave 1: gather(A, B, C)
+        Wave 2: gather(D, E)  — runs after determination is computed
+    """
+
+    header, clinical, doc_quality = await asyncio.gather(
+        _draft_header(case, pcr_content, timeline),
+        _draft_clinical_assessment(timeline, case.incident_type),
+        _draft_documentation_quality(pcr_content, timeline),
+    )
 
     determination = compute_determination(findings, clinical, doc_quality)
-    rationale = await _draft_determination_rationale(
-        determination, findings, clinical, doc_quality
+
+    recommendations, rationale = await asyncio.gather(
+        _draft_recommendations(findings, clinical),
+        _draft_determination_rationale(determination, findings, clinical, doc_quality),
     )
 
     return QICaseReview(

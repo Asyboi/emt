@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 DISCREPANCY_THRESHOLD_SECONDS = 10.0
 DISCREPANCY_SCORE_THRESHOLD = 0.15
 
-_CLUSTER_SEM = asyncio.Semaphore(5)
+_CLUSTER_SEM = asyncio.Semaphore(3)
 
 
 async def _gated(coro):
@@ -251,6 +251,40 @@ def _deterministic_score_fallback(
         ),
         discrepancy_reasoning="Fallback: scored from timestamp spread only — LLM unavailable",
     )
+
+
+def _is_disputed(
+    cluster: EventCluster,
+    scored: ScoredCluster,
+    draft: DraftTimelineEntry,
+    by_id: dict[str, Event],
+) -> bool:
+    """Decide whether a cluster needs the Sonnet critic.
+
+    A cluster is disputed if Agent R's own scoring already shows
+    uncertainty, or the cluster's structure suggests the upstream
+    clustering may have over- or under-grouped. Everything else
+    bypasses the critic and is assembled deterministically from the
+    draft entry.
+    """
+    events = [by_id[eid] for eid in cluster.event_ids if eid in by_id]
+    if not events:
+        return False
+    if scored.discrepancy_score >= 0.5:
+        return True
+    if draft.match_confidence < 0.7:
+        return True
+    sources = {e.source for e in events}
+    if len(sources) >= 2:
+        timestamps = [e.timestamp_seconds for e in events]
+        if max(timestamps) - min(timestamps) > 30.0:
+            return True
+    if len(sources) == 1 and len(events) >= 3:
+        return True
+    event_types = {e.event_type for e in events}
+    if len(event_types) > 1:
+        return True
+    return False
 
 
 def _first_event_fallback(
@@ -474,11 +508,55 @@ async def reconcile(
             scored_list.append(scored)
             draft_list.append(draft)
 
-    # Agent 4 — Critic verification pass (sequential, Sonnet)
-    try:
-        return await _critic_pass(scored_list, draft_list, all_events)
-    except Exception as exc:
-        logger.warning(
-            "Agent 4 (critic) failed — assembling timeline directly from draft entries: %s", exc
+    # Conditional escalation — only disputed clusters go to Sonnet.
+    accepted_scored: list[ScoredCluster] = []
+    accepted_drafts: list[DraftTimelineEntry] = []
+    disputed_scored: list[ScoredCluster] = []
+    disputed_drafts: list[DraftTimelineEntry] = []
+    for cluster, scored, draft in zip(clusters, scored_list, draft_list):
+        if _is_disputed(cluster, scored, draft, by_id):
+            disputed_scored.append(scored)
+            disputed_drafts.append(draft)
+        else:
+            accepted_scored.append(scored)
+            accepted_drafts.append(draft)
+
+    logger.info(
+        "Critic escalation: %d/%d clusters disputed (skipping critic on %d)",
+        len(disputed_drafts),
+        len(clusters),
+        len(accepted_drafts),
+    )
+
+    accepted_timeline = _assemble_from_drafts(accepted_scored, accepted_drafts, by_id)
+
+    if not disputed_drafts:
+        merged = accepted_timeline
+    else:
+        try:
+            critic_timeline = await _critic_pass(
+                disputed_scored, disputed_drafts, all_events
+            )
+        except Exception as exc:
+            logger.warning(
+                "Agent 4 (critic) failed on disputed subset — assembling from drafts: %s",
+                exc,
+            )
+            critic_timeline = _assemble_from_drafts(
+                disputed_scored, disputed_drafts, by_id
+            )
+        merged = sorted(
+            accepted_timeline + critic_timeline,
+            key=lambda t: t.canonical_timestamp_seconds,
         )
-        return _assemble_from_drafts(scored_list, draft_list, by_id)
+
+    if logger.isEnabledFor(logging.DEBUG):
+        seen: set[str] = set()
+        for entry in merged:
+            for ev in entry.source_events:
+                assert ev.event_id not in seen, f"dup event_id {ev.event_id}"
+                seen.add(ev.event_id)
+        expected = {e.event_id for e in all_events}
+        assert seen == expected, f"timeline missing events: {expected - seen}"
+
+    return merged
