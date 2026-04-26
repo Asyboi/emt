@@ -51,6 +51,21 @@ def save_upstream_cache(case_id: str, cache: UpstreamCache) -> Path:
     return path
 
 
+def resolve_upstream_cache(case_id: str) -> UpstreamCache | None:
+    """Cache for `case_id`, falling back to `DEMO_UPSTREAM_CACHE_CASE_ID`.
+
+    Lets a fresh upload-created case borrow a previously warmed cache so the
+    PCR Auto-Draft demo doesn't re-run Gemini/Scribe on every new case.
+    """
+    own = load_upstream_cache(case_id)
+    if own is not None:
+        return own
+    fallback_id = settings.DEMO_UPSTREAM_CACHE_CASE_ID
+    if fallback_id and fallback_id != case_id:
+        return load_upstream_cache(fallback_id)
+    return None
+
+
 def clear_upstream_cache(case_id: str) -> bool:
     path = _cache_path(case_id)
     if not path.exists():

@@ -21,6 +21,11 @@ class Settings(BaseSettings):
 
     FRONTEND_ORIGINS: str = "http://localhost:5173"
 
+    # Demo: when set, cases without their own upstream_cache.json (e.g. fresh
+    # uploads from the New Report UI) reuse this case's warmed CAD/video/audio
+    # events for the PCR Auto-Draft so the demo flow stays fast.
+    DEMO_UPSTREAM_CACHE_CASE_ID: str = ""
+
     @property
     def frontend_origins_list(self) -> list[str]:
         return [o.strip() for o in self.FRONTEND_ORIGINS.split(",") if o.strip()]

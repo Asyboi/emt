@@ -1,7 +1,7 @@
 """LLM + media client wrappers.
 
 Phase 4 wired `claude_haiku`. Phase 5 added `claude_sonnet` and now
-brings up `elevenlabs_transcribe` (audio) and `gemini_flash_video`
+brings up `elevenlabs_transcribe` (audio) and `gemini_pro_video`
 (video). Each wrapper is the thinnest possible adapter — retries +
 returning a plain dict — so pipeline stages stay readable.
 """
@@ -93,13 +93,13 @@ async def elevenlabs_transcribe(audio_path: str) -> dict[str, Any]:
     return response.json()
 
 
-async def gemini_flash_video(
+async def gemini_pro_video(
     video_path: str,
     prompt: str,
     tool: dict[str, Any],
     system: str | None = None,
 ) -> dict[str, Any]:
-    """Send a video file to Gemini 2.5 Flash with a structured-output tool.
+    """Send a video file to Gemini 2.5 Pro with a structured-output tool.
 
     The video is uploaded via the File API, polled until ACTIVE, and
     then attached to a generate_content call constrained to the
@@ -132,7 +132,7 @@ async def gemini_flash_video(
         "parameters": tool["input_schema"],
     }
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
+        model_name="gemini-2.5-pro",
         system_instruction=system,
         tools=[{"function_declarations": [function_declaration]}],
         tool_config={"function_calling_config": {"mode": "ANY", "allowed_function_names": [tool["name"]]}},

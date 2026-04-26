@@ -17,7 +17,7 @@ import logging
 import uuid
 from pathlib import Path
 
-from app.llm_clients import gemini_flash_video
+from app.llm_clients import gemini_pro_video
 from app.prompts import (
     VIDEO_EVENTS_SYSTEM,
     VIDEO_EVENTS_TOOL,
@@ -27,7 +27,7 @@ from app.schemas import Case, Event, EventSource, EventType
 
 logger = logging.getLogger(__name__)
 
-MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_VIDEO_BYTES = 1024 * 1024 * 1024  # 1 GB (Gemini 2.5 Pro File API ceiling is 2 GB)
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -84,7 +84,7 @@ async def analyze_video(case: Case) -> list[Event]:
         return _fallback_events()
 
     try:
-        result = await gemini_flash_video(
+        result = await gemini_pro_video(
             video_path=str(video_path),
             prompt=VIDEO_EVENTS_USER_PROMPT,
             tool=VIDEO_EVENTS_TOOL,

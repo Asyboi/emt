@@ -16,6 +16,7 @@ from app.pipeline import audio_analyzer, video_analyzer
 from app.pipeline.cad_parser import safe_cad_parse
 from app.pipeline.pcr_drafter import draft_pcr
 from app.schemas import PCRDraft, PCRDraftStatus
+from app.upstream_cache import resolve_upstream_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cases/{case_id}", tags=["pcr-draft"])
@@ -68,11 +69,25 @@ async def generate_pcr_draft(case_id: str, background_tasks: BackgroundTasks) ->
 
     async def _run() -> None:
         try:
-            cad_record, video_events, audio_events = await asyncio.gather(
-                safe_cad_parse(case.cad_path),
-                video_analyzer.analyze_video(case),
-                audio_analyzer.analyze_audio(case),
-            )
+            cache = resolve_upstream_cache(case_id)
+            if cache is not None:
+                logger.info(
+                    "PCR draft for %s using warmed upstream cache "
+                    "(video=%d audio=%d cad=%s) — skipping live analyzers",
+                    case_id,
+                    len(cache.video_events),
+                    len(cache.audio_events),
+                    "present" if cache.cad_record else "absent",
+                )
+                cad_record = cache.cad_record
+                video_events = cache.video_events
+                audio_events = cache.audio_events
+            else:
+                cad_record, video_events, audio_events = await asyncio.gather(
+                    safe_cad_parse(case.cad_path),
+                    video_analyzer.analyze_video(case),
+                    audio_analyzer.analyze_audio(case),
+                )
             draft = await draft_pcr(
                 case_id=case_id,
                 video_events=video_events,
