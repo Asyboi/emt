@@ -119,6 +119,13 @@ def _build_case(case_dir: Path) -> Case:
     video_path = case_dir / "video.mp4"
     audio_path = case_dir / "audio.mp3"
     incident_date = datetime.fromtimestamp(case_dir.stat().st_mtime, tz=timezone.utc)
+    metadata: dict = {}
+    metadata_path = case_dir / "metadata.json"
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning("Ignoring unparseable %s/metadata.json", case_dir.name)
     return Case(
         case_id=case_dir.name,
         incident_type="cardiac_arrest",
@@ -127,8 +134,31 @@ def _build_case(case_dir: Path) -> Case:
         video_path=str(video_path),
         audio_path=str(audio_path),
         cad_path=str(case_dir / "cad.json") if (case_dir / "cad.json").exists() else None,
-        metadata={},
+        metadata=metadata,
     )
+
+
+def next_case_id() -> str:
+    """Return the next sequential case_NN id by scanning CASES_DIR.
+
+    Pads to at least 2 digits to match the existing repo convention
+    (case_01, case_02, ...). Cases with non-numeric or non-case_ prefixes
+    are ignored.
+    """
+    root = _cases_root()
+    max_n = 0
+    if root.exists():
+        for entry in root.iterdir():
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            if not name.startswith("case_"):
+                continue
+            suffix = name[len("case_") :]
+            if not suffix.isdigit():
+                continue
+            max_n = max(max_n, int(suffix))
+    return f"case_{max_n + 1:02d}"
 
 
 def list_cases() -> list[Case]:

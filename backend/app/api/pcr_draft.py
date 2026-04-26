@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from app import pcr_store
 from app.case_loader import load_case
 from app.config import settings
 from app.pipeline import audio_analyzer, video_analyzer
@@ -18,6 +19,7 @@ from app.schemas import PCRDraft, PCRDraftStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cases/{case_id}", tags=["pcr-draft"])
+store_router = APIRouter(tags=["pcr-draft"])
 
 DRAFT_FILENAME = "pcr_draft.json"
 PCR_FILENAME = "pcr.md"
@@ -143,6 +145,7 @@ async def confirm_pcr_draft(case_id: str, body: ConfirmRequest) -> PCRDraft:
         }
     )
     _save_draft(confirmed)
+    pcr_store.save_pcr(confirmed)
 
     logger.info(
         "PCR confirmed for case %s by %s (edits: %s, remaining unconfirmed: %d)",
@@ -152,3 +155,9 @@ async def confirm_pcr_draft(case_id: str, body: ConfirmRequest) -> PCRDraft:
         confirmed.unconfirmed_count,
     )
     return confirmed
+
+
+@store_router.get("/pcr-drafts", response_model=list[PCRDraft])
+async def list_pcr_drafts() -> list[PCRDraft]:
+    """List all confirmed PCR drafts from the persistent store."""
+    return pcr_store.list_saved_pcrs()

@@ -10,7 +10,7 @@ import type {
   TimelineEvent,
 } from '../types';
 
-const PRIMARY_INCIDENT_ID = 'INC-2026-04-0231';
+const PRIMARY_INCIDENT_ID = 'case_01';
 
 const sections: ReportSection[] = [
   {
@@ -264,16 +264,16 @@ const primaryReport: IncidentReport = {
 };
 
 export const mockIncidentList: IncidentSummary[] = [
-  { id: 'INC-2026-04-0231', date: '2026-04-12', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'finalized' },
-  { id: 'INC-2026-04-0228', date: '2026-04-11', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
-  { id: 'INC-2026-04-0224', date: '2026-04-10', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'draft' },
-  { id: 'INC-2026-04-0219', date: '2026-04-09', crew: 'M-5 / MARTINEZ, PATEL', status: 'finalized' },
-  { id: 'INC-2026-04-0215', date: '2026-04-08', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
-  { id: 'INC-2026-04-0211', date: '2026-04-07', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'finalized' },
-  { id: 'INC-2026-04-0207', date: '2026-04-06', crew: 'M-4 / THOMPSON, LEE', status: 'finalized' },
-  { id: 'INC-2026-04-0203', date: '2026-04-05', crew: 'M-5 / MARTINEZ, PATEL', status: 'draft' },
-  { id: 'INC-2026-04-0198', date: '2026-04-04', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
-  { id: 'INC-2026-04-0194', date: '2026-04-03', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'finalized' },
+  { id: 'case_01', date: '2026-04-12', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'draft' },
+  { id: 'case_02', date: '2026-04-11', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
+  { id: 'case_03', date: '2026-04-10', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'draft' },
+  { id: 'case_04', date: '2026-04-09', crew: 'M-5 / MARTINEZ, PATEL', status: 'finalized' },
+  { id: 'case_05', date: '2026-04-08', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
+  { id: 'case_06', date: '2026-04-07', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'finalized' },
+  { id: 'case_07', date: '2026-04-06', crew: 'M-4 / THOMPSON, LEE', status: 'finalized' },
+  { id: 'case_08', date: '2026-04-05', crew: 'M-5 / MARTINEZ, PATEL', status: 'draft' },
+  { id: 'case_09', date: '2026-04-04', crew: 'M-3 / WILLIAMS, KIM', status: 'finalized' },
+  { id: 'case_10', date: '2026-04-03', crew: 'M-7 / RODRIGUEZ, CHEN', status: 'finalized' },
 ];
 
 export const mockIncidents: Record<string, IncidentReport> = {

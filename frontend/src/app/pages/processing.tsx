@@ -1,60 +1,58 @@
-import { useEffect, useState, useRef } from 'react';
-import { Check, Loader2, X, AlertTriangle, CheckCircle2, Circle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, Loader2, AlertTriangle, CheckCircle2, Circle } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useIncident } from '../../data/hooks';
-import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
-import type { AgentStatus, AgentTile } from '../../types';
+import { getDataSource } from '../../data/source';
+import { useProcessingStream } from '../../data/sse';
+import type { PipelineStage, PipelineStatus } from '../../types/backend';
+import type { AgentStatus, AgentTile, PipelineFinding } from '../../types';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C_SUCCESS = '#3D5A3D';
 const C_PRIMARY = '#B8732E';
 const C_BORDER = '#D9D7D0';
 const C_MUTED = '#9A9890';
-const C_BG = '#F5F4F0';
 const C_SURFACE = '#FAF9F5';
 const C_SUBCARD = '#EDECE8';
 
-// ── Layout constants ──────────────────────────────────────────────────────────
-const CARD_H = 104;
-const C1_GAP = 14;
-const C1_W = 380;
-const RECON_H = 212;
-const SEQ_H = 100;
-const ARR_H = 28;
-const HARR_W = 32;
-const SEQ_ARR = 56;
-const CON_W = 90;
-const FLOW_H = 340;
+// ── Stage configuration (data-driven 8-card grid) ─────────────────────────────
+interface StageDef {
+  stage: PipelineStage;
+  label: string;
+  model: string;
+  row: 'parallel' | 'sequential';
+}
 
-const EPCR_TOP = 0;
-const AUDIO_TOP = CARD_H + C1_GAP;
-const CAD_TOP = 2 * (CARD_H + C1_GAP);
+const STAGE_CONFIG: StageDef[] = [
+  { stage: 'cad_parsing',    label: 'CAD SYNC',       model: 'Haiku 4.5',         row: 'parallel' },
+  { stage: 'pcr_parsing',    label: 'ePCR PARSER',    model: 'Haiku 4.5',         row: 'parallel' },
+  { stage: 'video_analysis', label: 'VIDEO ANALYSIS', model: 'Gemini 2.5 Flash',  row: 'parallel' },
+  { stage: 'audio_analysis', label: 'AUDIO ANALYSIS', model: 'Scribe v1 + Haiku', row: 'parallel' },
+  { stage: 'reconciliation', label: 'RECONCILIATION', model: 'Sonnet 4.6',        row: 'sequential' },
+  { stage: 'protocol_check', label: 'PROTOCOL CHECK', model: 'Sonnet 4.6',        row: 'sequential' },
+  { stage: 'findings',       label: 'FINDINGS',       model: 'Sonnet 4.6',        row: 'sequential' },
+  { stage: 'drafting',       label: 'REPORT DRAFTER', model: 'Sonnet 4.6',        row: 'sequential' },
+];
 
-const CY_EPCR = EPCR_TOP + CARD_H / 2;
-const CY_AUDIO = AUDIO_TOP + CARD_H / 2;
-const CY_CAD = CAD_TOP + CARD_H / 2;
+const PARALLEL_STAGES = STAGE_CONFIG.filter((s) => s.row === 'parallel');
+const SEQUENTIAL_STAGES = STAGE_CONFIG.filter((s) => s.row === 'sequential');
 
-const CONV_Y = CY_AUDIO;
+const RECON_SUB_STEP_MS = 2000;
 
-// ── Horizontal tile-to-tile arrow ─────────────────────────────────────────────
-const HorizArrow = ({ done }: { done: boolean }) => (
-  <div className="flex items-center justify-center flex-shrink-0" style={{ width: HARR_W }}>
-    <svg width={HARR_W} height={14} viewBox={`0 0 ${HARR_W} 14`}>
-      <line
-        x1="0"
-        y1="7"
-        x2={HARR_W - 9}
-        y2="7"
-        stroke={done ? C_PRIMARY : C_MUTED}
-        strokeWidth="1.5"
-        strokeDasharray={done ? undefined : '3 2'}
-      />
-      <polygon points={`${HARR_W},7 ${HARR_W - 9},3 ${HARR_W - 9},11`} fill={done ? C_PRIMARY : C_MUTED} />
-    </svg>
-  </div>
-);
+const SUB_TILE_DEFS: { id: string; shortName: string; model?: string; rulesBased?: boolean }[] = [
+  { id: 'cluster', shortName: 'CLUSTER EVENTS', model: 'Haiku 4.5' },
+  { id: 'review', shortName: 'REVIEW CLUSTERS', rulesBased: true },
+  { id: 'critic', shortName: 'CRITIQUE TIMELINE', model: 'Sonnet 4.6' },
+];
 
-// ── Sub-agent tile ─────────────────────────────────────────────────────────────
-const SubTile = ({ sa }: { sa: AgentTile }) => {
+function pipelineStatusToAgentStatus(s: PipelineStatus | undefined): AgentStatus {
+  if (s === 'complete') return 'complete';
+  if (s === 'running') return 'active';
+  return 'waiting';
+}
+
+// ── Sub-agent tile (inside reconciliation card) ───────────────────────────────
+function SubTile({ sa }: { sa: AgentTile }) {
   const bl = sa.status === 'complete' ? C_SUCCESS : sa.status === 'active' ? C_PRIMARY : C_MUTED;
   const blW = sa.status === 'waiting' ? '1px' : '2px';
   const blS = sa.status === 'waiting' ? 'dashed' : 'solid';
@@ -113,247 +111,122 @@ const SubTile = ({ sa }: { sa: AgentTile }) => {
           {sa.model}
         </span>
       ) : null}
-      {sa.status === 'active' && sa.progressPct && (
-        <div style={{ height: 2, background: C_BORDER, borderRadius: 999, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: sa.progressPct, background: C_PRIMARY }} />
-        </div>
-      )}
-      {sa.statLine && (
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            lineHeight: 1.4,
-            color:
-              sa.status === 'complete' ? C_SUCCESS : sa.status === 'active' ? C_PRIMARY : '#6B6B68',
-          }}
-        >
-          {sa.statLine}
-        </span>
-      )}
     </div>
   );
-};
+}
 
-// ── Main component ─────────────────────────────────────────────────────────────
-export function Processing() {
-  const { data: incident, loading, error } = useIncident(PRIMARY_MOCK_INCIDENT_ID);
-  const logRef = useRef<HTMLDivElement>(null);
-
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [selected, setSelected] = useState<string | null>('audio-analyzer');
-  const [cursor, setCursor] = useState(true);
-
-  useEffect(() => {
-    const t = setInterval(() => setCursor((p) => !p), 530);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    if (autoScroll && logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
-  }, [incident, autoScroll]);
-
-  if (loading || !incident) {
-    return (
-      <div className="h-screen bg-background flex items-center justify-center">
-        <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
-          {error ? `Error: ${error.message}` : 'Loading pipeline…'}
+// ── Standard stage card ───────────────────────────────────────────────────────
+function StageCard({
+  label,
+  model,
+  status,
+}: {
+  label: string;
+  model: string;
+  status: AgentStatus;
+}) {
+  const accent = status === 'complete' ? C_SUCCESS : status === 'active' ? C_PRIMARY : C_MUTED;
+  const stat =
+    status === 'complete'
+      ? 'Complete'
+      : status === 'active'
+        ? 'Running…'
+        : 'Waiting';
+  return (
+    <div
+      className="w-full text-left rounded-sm transition-all"
+      style={{
+        minHeight: 104,
+        background: C_SURFACE,
+        boxSizing: 'border-box',
+        border: `1px solid ${C_BORDER}`,
+        borderLeft: `3px solid ${accent}`,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        padding: '12px 14px',
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 13,
+              fontWeight: 700,
+              letterSpacing: '0.09em',
+            }}
+          >
+            {label}
+          </span>
+          <span
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: C_MUTED, flexShrink: 0 }}
+          >
+            · {model}
+          </span>
         </div>
+        {status === 'complete' && (
+          <Check style={{ width: 14, height: 14, color: C_SUCCESS, flexShrink: 0 }} />
+        )}
+        {status === 'active' && (
+          <Loader2
+            style={{ width: 14, height: 14, color: C_PRIMARY, flexShrink: 0 }}
+            className="animate-spin"
+          />
+        )}
+        {status === 'waiting' && (
+          <Circle style={{ width: 14, height: 14, color: C_MUTED, flexShrink: 0 }} />
+        )}
       </div>
-    );
-  }
-
-  const { pipeline } = incident;
-  const subTiles = pipeline.agentTiles;
-  const findings = pipeline.findings;
-  const audioLogs = pipeline.audioLogs;
-  const elapsed = pipeline.elapsedSeconds;
-  const progress = pipeline.progressPct;
-
-  const hms = (s: number) =>
-    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-  const logColor = (t: (typeof audioLogs)[number]['type']) => {
-    if (t === 'system') return 'text-foreground-secondary';
-    if (t === 'action') return 'text-foreground';
-    if (t === 'reasoning') return 'text-primary';
-    if (t === 'finding') return 'text-success';
-    return 'text-destructive';
-  };
-
-  // ── Compact extraction card (Col 1) ─────────────────────────────────────────
-  const CompactCard = ({
-    id,
-    name,
-    model,
-    status,
-    stat,
-  }: {
-    id: string;
-    name: string;
-    model: string;
-    status: AgentStatus;
-    stat: string;
-  }) => {
-    const accent = status === 'complete' ? C_SUCCESS : status === 'active' ? C_PRIMARY : C_MUTED;
-    const isSel = selected === id;
-    return (
-      <button
-        onClick={() => setSelected(isSel ? null : id)}
-        className="w-full text-left rounded-sm transition-all hover:shadow-sm"
+      <div style={{ borderTop: `1px solid ${C_BORDER}` }} />
+      <div
         style={{
-          height: CARD_H,
-          background: C_SURFACE,
-          boxSizing: 'border-box',
-          border: `1px solid ${isSel ? C_PRIMARY : C_BORDER}`,
-          borderLeft: `3px solid ${accent}`,
-          boxShadow: isSel ? `0 0 0 1px ${C_PRIMARY}` : undefined,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+          color: '#6B6B68',
           display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '12px 14px',
+          alignItems: 'center',
+          gap: 6,
         }}
       >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 13,
-                fontWeight: 700,
-                letterSpacing: '0.09em',
-                flexShrink: 0,
-              }}
-            >
-              {name}
-            </span>
-            <span
-              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: C_MUTED, flexShrink: 0 }}
-            >
-              · {model}
-            </span>
-          </div>
-          {status === 'complete' && (
-            <Check style={{ width: 14, height: 14, color: C_SUCCESS, flexShrink: 0 }} />
-          )}
-          {status === 'active' && (
-            <Loader2
-              style={{ width: 14, height: 14, color: C_PRIMARY, flexShrink: 0 }}
-              className="animate-spin"
-            />
-          )}
-          {status === 'waiting' && (
-            <Circle style={{ width: 14, height: 14, color: C_MUTED, flexShrink: 0 }} />
-          )}
-        </div>
-        <div style={{ borderTop: `1px solid ${C_BORDER}` }} />
-        <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12,
-            color: '#6B6B68',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          {status === 'active' && (
-            <span
-              className="inline-block w-2 h-2 rounded-full animate-pulse flex-shrink-0"
-              style={{ background: C_PRIMARY }}
-            />
-          )}
-          {stat}
-        </div>
-      </button>
-    );
-  };
+        {status === 'active' && (
+          <span
+            className="inline-block w-2 h-2 rounded-full animate-pulse flex-shrink-0"
+            style={{ background: C_PRIMARY }}
+          />
+        )}
+        {stat}
+      </div>
+    </div>
+  );
+}
 
-  const SeqCard = ({
-    id,
-    name,
-    model,
-    status,
-    stat,
-  }: {
-    id: string;
-    name: string;
-    model: string;
-    status: AgentStatus;
-    stat: string;
-  }) => {
-    const accent = status === 'complete' ? C_SUCCESS : status === 'active' ? C_PRIMARY : C_MUTED;
-    return (
-      <button
-        onClick={() => setSelected(selected === id ? null : id)}
-        className="w-full h-full text-left rounded-sm transition-all hover:shadow-sm"
-        style={{
-          minHeight: SEQ_H,
-          background: C_SURFACE,
-          boxSizing: 'border-box',
-          border: `1px solid ${C_BORDER}`,
-          borderLeft: `3px solid ${accent}`,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '12px 14px',
-        }}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 13,
-                fontWeight: 700,
-                letterSpacing: '0.09em',
-              }}
-            >
-              {name}
-            </span>
-            <span
-              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: C_MUTED, flexShrink: 0 }}
-            >
-              · {model}
-            </span>
-          </div>
-          {status === 'complete' && (
-            <Check style={{ width: 14, height: 14, color: C_SUCCESS, flexShrink: 0 }} />
-          )}
-          {status === 'active' && (
-            <Loader2
-              style={{ width: 14, height: 14, color: C_PRIMARY, flexShrink: 0 }}
-              className="animate-spin"
-            />
-          )}
-          {status === 'waiting' && (
-            <Circle style={{ width: 14, height: 14, color: C_MUTED, flexShrink: 0 }} />
-          )}
-        </div>
-        <div style={{ borderTop: `1px solid ${C_BORDER}` }} />
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#6B6B68' }}>{stat}</div>
-      </button>
-    );
-  };
-
-  const ReconciliationCard = () => (
+// ── Reconciliation card (with 3 sub-tiles) ────────────────────────────────────
+function ReconciliationCard({
+  status,
+  subTiles,
+}: {
+  status: AgentStatus;
+  subTiles: AgentTile[];
+}) {
+  const accent = status === 'complete' ? C_SUCCESS : status === 'active' ? C_PRIMARY : C_MUTED;
+  const completeCount = subTiles.filter((s) => s.status === 'complete').length;
+  return (
     <div
       className="w-full rounded-sm"
       style={{
-        height: RECON_H,
         background: C_SURFACE,
         boxSizing: 'border-box',
-        border: `1px solid rgba(184,115,46,0.35)`,
-        borderLeft: `3px solid ${C_PRIMARY}`,
+        border: `1px solid ${C_BORDER}`,
+        borderLeft: `3px solid ${accent}`,
         padding: '12px 14px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 0,
+        gap: 10,
       }}
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <span
             style={{
               fontFamily: 'var(--font-mono)',
@@ -368,94 +241,194 @@ export function Processing() {
             · Orchestrator · Sonnet 4.6
           </span>
         </div>
-        <Loader2
-          style={{ width: 14, height: 14, color: C_PRIMARY, flexShrink: 0 }}
-          className="animate-spin"
-        />
+        {status === 'complete' && (
+          <Check style={{ width: 14, height: 14, color: C_SUCCESS, flexShrink: 0 }} />
+        )}
+        {status === 'active' && (
+          <Loader2
+            style={{ width: 14, height: 14, color: C_PRIMARY, flexShrink: 0 }}
+            className="animate-spin"
+          />
+        )}
+        {status === 'waiting' && (
+          <Circle style={{ width: 14, height: 14, color: C_MUTED, flexShrink: 0 }} />
+        )}
       </div>
 
-      <div
-        className="inline-flex items-center gap-1.5 self-start mt-2 px-2 py-1 rounded-sm"
-        style={{ background: 'rgba(184,115,46,0.08)', border: '1px solid rgba(184,115,46,0.22)' }}
-      >
-        <span
-          className="w-1.5 h-1.5 rounded-full animate-pulse"
-          style={{ background: C_PRIMARY, display: 'inline-block' }}
-        />
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: C_PRIMARY,
-            letterSpacing: '0.08em',
-          }}
+      {status === 'active' && (
+        <div
+          className="inline-flex items-center gap-1.5 self-start px-2 py-1 rounded-sm"
+          style={{ background: 'rgba(184,115,46,0.08)', border: '1px solid rgba(184,115,46,0.22)' }}
         >
-          RUNNING · {subTiles.filter((s) => s.status === 'complete').length}/{subTiles.length} SUB-AGENTS COMPLETE
-        </span>
-      </div>
+          <span
+            className="w-1.5 h-1.5 rounded-full animate-pulse"
+            style={{ background: C_PRIMARY, display: 'inline-block' }}
+          />
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: C_PRIMARY,
+              letterSpacing: '0.08em',
+            }}
+          >
+            RUNNING · {completeCount}/{subTiles.length} SUB-AGENTS COMPLETE
+          </span>
+        </div>
+      )}
 
-      <div className="flex items-center gap-4 mt-2">
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: C_MUTED,
-            letterSpacing: '0.10em',
-          }}
-        >
-          INPUTS
-        </span>
-        {[
-          { src: 'ePCR', ok: true },
-          { src: 'CAD', ok: true },
-          { src: 'Audio', ok: false },
-        ].map((inp, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{
-                background: inp.ok ? C_SUCCESS : 'transparent',
-                border: inp.ok ? 'none' : `1px solid ${C_MUTED}`,
-                display: 'inline-block',
-              }}
-            />
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: inp.ok ? C_SUCCESS : C_MUTED,
-              }}
-            >
-              {inp.src} {inp.ok ? '✓' : '…'}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ borderTop: `1px solid ${C_BORDER}`, margin: '10px 0 6px' }} />
       <div
         style={{
           fontFamily: 'var(--font-mono)',
           fontSize: 10,
           color: C_MUTED,
           letterSpacing: '0.14em',
-          marginBottom: 8,
         }}
       >
         SUB-AGENT CHAIN
       </div>
 
-      <div className="flex items-stretch flex-1" style={{ minHeight: 0 }}>
-        {subTiles.map((tile, i) => (
-          <SubTileWithArrow key={tile.id} tile={tile} isLast={i === subTiles.length - 1} />
+      <div className="flex items-stretch gap-2 flex-wrap" style={{ minHeight: 0 }}>
+        {subTiles.map((tile) => (
+          <SubTile key={tile.id} sa={tile} />
         ))}
       </div>
     </div>
   );
+}
 
+// ── Main component ────────────────────────────────────────────────────────────
+export function Processing() {
+  const { caseId } = useParams<{ caseId: string }>();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const demoFlag = searchParams.get('demo') === '1';
+
+  const isRemote = useMemo(() => getDataSource().mode === 'remote', []);
+
+  const localIncident = useIncident(isRemote ? undefined : caseId);
+  const remoteState = useProcessingStream(isRemote ? caseId : undefined, { demo: demoFlag });
+
+  // Auto-navigate to review on completion (remote only).
+  useEffect(() => {
+    if (isRemote && remoteState.isComplete && caseId) {
+      const t = window.setTimeout(() => navigate(`/review/${caseId}`), 2000);
+      return () => window.clearTimeout(t);
+    }
+  }, [isRemote, remoteState.isComplete, caseId, navigate]);
+
+  // Reconciliation sub-tile timed sequence.
+  // Index meaning: -1 = all waiting, 0..2 = that index active (lower indices complete),
+  // 3 = all complete. The timed chain advances on `running`; on `complete` jumps to 3.
+  const reconBackendStatus = isRemote
+    ? remoteState.stages.get('reconciliation')?.status
+    : 'complete';
+  const [reconSubIdx, setReconSubIdx] = useState<number>(-1);
+
+  useEffect(() => {
+    if (!isRemote) {
+      setReconSubIdx(3);
+      return;
+    }
+    if (reconBackendStatus === 'running') {
+      setReconSubIdx(0);
+      const t1 = window.setTimeout(() => setReconSubIdx(1), RECON_SUB_STEP_MS);
+      const t2 = window.setTimeout(() => setReconSubIdx(2), RECON_SUB_STEP_MS * 2);
+      return () => {
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+      };
+    }
+    if (reconBackendStatus === 'complete') {
+      setReconSubIdx(3);
+    } else {
+      setReconSubIdx(-1);
+    }
+  }, [isRemote, reconBackendStatus]);
+
+  function subTileStatus(idx: number): AgentStatus {
+    if (reconSubIdx === -1) return 'waiting';
+    if (reconSubIdx === 3) return 'complete';
+    if (idx < reconSubIdx) return 'complete';
+    if (idx === reconSubIdx) return 'active';
+    return 'waiting';
+  }
+
+  const subTiles: AgentTile[] = SUB_TILE_DEFS.map((def, i) => ({
+    id: def.id,
+    shortName: def.shortName,
+    model: def.model,
+    rulesBased: def.rulesBased,
+    status: subTileStatus(i),
+  }));
+
+  // Resolve stage status for any pipeline stage.
+  function getStageStatus(stage: PipelineStage): AgentStatus {
+    if (!isRemote) return 'complete';
+    return pipelineStatusToAgentStatus(remoteState.stages.get(stage)?.status);
+  }
+
+  // Header values
+  const elapsed = isRemote
+    ? remoteState.elapsedSeconds
+    : (localIncident.data?.pipeline.elapsedSeconds ?? 0);
+  const progress = isRemote
+    ? remoteState.progressPct
+    : (localIncident.data?.pipeline.progressPct ?? 100);
+  const overallStatus = isRemote
+    ? remoteState.error
+      ? 'ERROR'
+      : remoteState.isComplete
+        ? 'COMPLETE'
+        : 'ACTIVE'
+    : 'STATIC MOCK';
+
+  // Findings strip (live from remote review once available; mock otherwise)
+  const findings: PipelineFinding[] = isRemote
+    ? (remoteState.review?.pipeline.findings ?? [])
+    : (localIncident.data?.pipeline.findings ?? []);
+
+  const completeCount = isRemote
+    ? Array.from(remoteState.stages.values()).filter((s) => s.status === 'complete').length
+    : STAGE_CONFIG.length;
+  const activeCount = isRemote
+    ? Array.from(remoteState.stages.values()).filter((s) => s.status === 'running').length
+    : 0;
   const flagCount = findings.filter((f) => f.type === 'warning').length;
-  const completeCount = subTiles.filter((s) => s.status === 'complete').length;
-  const activeCount = subTiles.filter((s) => s.status === 'active').length;
+
+  const hms = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+  // Loading / error states
+  if (!caseId) {
+    return (
+      <div className="h-screen bg-background flex items-center justify-center">
+        <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
+          Missing case id in route.
+        </div>
+      </div>
+    );
+  }
+
+  if (!isRemote && (localIncident.loading || !localIncident.data)) {
+    return (
+      <div className="h-screen bg-background flex items-center justify-center">
+        <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
+          {localIncident.error ? `Error: ${localIncident.error.message}` : 'Loading pipeline…'}
+        </div>
+      </div>
+    );
+  }
+
+  if (isRemote && remoteState.error) {
+    return (
+      <div className="h-screen bg-background flex items-center justify-center">
+        <div className="text-sm" style={{ fontFamily: 'var(--font-mono)', color: '#9B2C2C' }}>
+          Pipeline error: {remoteState.error}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -490,14 +463,21 @@ export function Processing() {
               marginBottom: 5,
             }}
           >
-            {incident.id}
+            {caseId}
           </div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#6B6B68' }}>
             AGENT: CALYX-CORE-01
             <span style={{ margin: '0 12px' }}>|</span>
             ELAPSED: {hms(elapsed)}
             <span style={{ margin: '0 12px' }}>|</span>
-            STATUS: <span style={{ color: C_PRIMARY }}>ACTIVE</span>
+            STATUS:{' '}
+            <span
+              style={{
+                color: overallStatus === 'COMPLETE' ? C_SUCCESS : overallStatus === 'ERROR' ? '#9B2C2C' : C_PRIMARY,
+              }}
+            >
+              {overallStatus}
+            </span>
           </div>
         </div>
         <div
@@ -515,150 +495,102 @@ export function Processing() {
               inset: '0 auto 0 0',
               width: `${progress}%`,
               background: C_PRIMARY,
+              transition: 'width 600ms ease-out',
             }}
           />
         </div>
       </div>
 
-      {/* Flow section */}
-      <div className="flex-1 flex flex-col justify-center px-10 min-h-0">
-        <div className="flex items-center mb-4">
-          <div style={{ width: C1_W, flexShrink: 0 }}>
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                letterSpacing: '0.15em',
-                color: C_MUTED,
-              }}
-            >
-              PARALLEL EXTRACTION
-            </span>
+      {/* Pipeline grid */}
+      <div className="flex-1 flex flex-col px-10 py-6 gap-6 min-h-0 overflow-y-auto">
+        {/* Row 1 — parallel extraction */}
+        <div>
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              letterSpacing: '0.15em',
+              color: C_MUTED,
+              marginBottom: 10,
+            }}
+          >
+            PARALLEL EXTRACTION
           </div>
-          <div style={{ width: CON_W, flexShrink: 0 }} />
-          <div>
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                letterSpacing: '0.15em',
-                color: C_MUTED,
-              }}
-            >
-              SEQUENTIAL REASONING
-            </span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {PARALLEL_STAGES.map((s) => (
+              <StageCard
+                key={s.stage}
+                label={s.label}
+                model={s.model}
+                status={getStageStatus(s.stage)}
+              />
+            ))}
           </div>
         </div>
 
-        <div className="flex items-start" style={{ height: FLOW_H }}>
-          {/* Col 1 */}
-          <div className="flex-shrink-0 relative" style={{ width: C1_W, height: FLOW_H }}>
-            <div style={{ position: 'absolute', top: EPCR_TOP, left: 0, right: 0 }}>
-              <CompactCard
-                id="epcr-parser"
-                name="ePCR PARSER"
-                model="Haiku 4.5"
-                status="complete"
-                stat="14 events · 3 meds · vitals timeline"
-              />
-            </div>
-            <div style={{ position: 'absolute', top: AUDIO_TOP, left: 0, right: 0 }}>
-              <CompactCard
-                id="audio-analyzer"
-                name="AUDIO ANALYZER"
-                model="Whisper + Haiku 4.5"
-                status="active"
-                stat="5/7 substeps — processing BODYCAM-02…"
-              />
-            </div>
-            <div style={{ position: 'absolute', top: CAD_TOP, left: 0, right: 0 }}>
-              <CompactCard
-                id="cad-sync"
-                name="CAD SYNC"
-                model="Haiku 4.5"
-                status="complete"
-                stat="47 GPS waypoints · 6 dispatch events"
-              />
-            </div>
-          </div>
-
-          {/* Connectors */}
-          <svg
-            width={CON_W}
-            height={FLOW_H}
-            className="flex-shrink-0"
-            style={{ display: 'block', overflow: 'visible' }}
+        {/* Row 2 — sequential reasoning */}
+        <div>
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              letterSpacing: '0.15em',
+              color: C_MUTED,
+              marginBottom: 10,
+            }}
           >
-            <line x1="0" y1={CY_EPCR} x2={CON_W} y2={CONV_Y} stroke={C_SUCCESS} strokeWidth="1.5" />
-            <line x1="0" y1={CY_AUDIO} x2={CON_W} y2={CONV_Y} stroke={C_PRIMARY} strokeWidth="1.5" />
-            <line x1="0" y1={CY_CAD} x2={CON_W} y2={CONV_Y} stroke={C_SUCCESS} strokeWidth="1.5" />
-            <circle cx={CON_W} cy={CONV_Y} r="5" fill={C_PRIMARY} stroke={C_BG} strokeWidth="2.5" />
-          </svg>
-
-          {/* Col 2 */}
-          <div className="flex-1 min-w-0 flex flex-col" style={{ height: FLOW_H }}>
-            <ReconciliationCard />
-
-            <div style={{ height: ARR_H, display: 'flex', alignItems: 'center' }}>
-              <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                <svg width={12} height={ARR_H} viewBox={`0 0 12 ${ARR_H}`}>
-                  <line
-                    x1="6"
-                    y1="0"
-                    x2="6"
-                    y2={ARR_H - 9}
-                    stroke={C_MUTED}
-                    strokeWidth="1.5"
-                    strokeDasharray="4 3"
-                  />
-                  <polygon points={`6,${ARR_H} 2,${ARR_H - 9} 10,${ARR_H - 9}`} fill={C_MUTED} />
-                </svg>
-              </div>
-              <div style={{ width: SEQ_ARR, flexShrink: 0 }} />
-              <div style={{ flex: 1 }} />
-            </div>
-
-            <div className="flex items-stretch" style={{ flex: 1 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <SeqCard
-                  id="protocol-check"
-                  name="PROTOCOL CHECK"
-                  model="Sonnet 4.6"
-                  status="waiting"
-                  stat="Awaiting reconciled timeline · ACLS adherence check"
-                />
-              </div>
-              <div
-                className="flex items-center justify-center flex-shrink-0"
-                style={{ width: SEQ_ARR }}
-              >
-                <svg width={SEQ_ARR} height={14} viewBox={`0 0 ${SEQ_ARR} 14`}>
-                  <line
-                    x1="0"
-                    y1="7"
-                    x2={SEQ_ARR - 9}
-                    y2="7"
-                    stroke={C_MUTED}
-                    strokeWidth="1.5"
-                    strokeDasharray="4 3"
-                  />
-                  <polygon
-                    points={`${SEQ_ARR},7 ${SEQ_ARR - 9},3 ${SEQ_ARR - 9},11`}
-                    fill={C_MUTED}
-                  />
-                </svg>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <SeqCard
-                  id="report-drafter"
-                  name="REPORT DRAFTER"
-                  model="Sonnet 4.6"
-                  status="waiting"
-                  stat="Awaiting protocol results · 9-section After-Action Review"
-                />
-              </div>
-            </div>
+            SEQUENTIAL REASONING
           </div>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-stretch">
+            <ReconciliationCard
+              status={getStageStatus('reconciliation')}
+              subTiles={subTiles}
+            />
+            {SEQUENTIAL_STAGES.filter((s) => s.stage !== 'reconciliation').map((s) => (
+              <StageCard
+                key={s.stage}
+                label={s.label}
+                model={s.model}
+                status={getStageStatus(s.stage)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Logs panel (remote: deferred placeholder; local: existing audio logs) */}
+        <div
+          className="rounded-sm border"
+          style={{
+            borderColor: C_BORDER,
+            background: C_SURFACE,
+            padding: '12px 14px',
+            minHeight: 100,
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              letterSpacing: '0.15em',
+              color: C_MUTED,
+              marginBottom: 8,
+            }}
+          >
+            ACTIVITY LOG
+          </div>
+          {isRemote ? (
+            <div style={{ fontSize: 12, color: '#6B6B68' }}>
+              Logs available after processing.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {(localIncident.data?.pipeline.audioLogs ?? []).map((log, i) => (
+                <div key={i} style={{ fontSize: 12, color: '#1A1A1A' }}>
+                  <span style={{ color: '#6B6B68' }}>[{log.timestamp}]</span> {log.message}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -724,10 +656,15 @@ export function Processing() {
         {findings.length > 3 && (
           <div className="flex items-center" style={{ marginLeft: 14 }}>
             <div style={{ width: 1, height: 16, background: C_BORDER, marginRight: 14 }} />
-            <button style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: C_PRIMARY }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: C_PRIMARY }}>
               (+{findings.length - 3} more)
-            </button>
+            </span>
           </div>
+        )}
+        {findings.length === 0 && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: C_MUTED }}>
+            None reported yet.
+          </span>
         )}
       </div>
 
@@ -746,13 +683,11 @@ export function Processing() {
           className="flex items-center gap-3 flex-shrink-0 whitespace-nowrap"
           style={{ color: '#6B6B68' }}
         >
-          <span>7 AGENTS</span>
+          <span>{STAGE_CONFIG.length} STAGES</span>
           <span style={{ color: C_BORDER }}>|</span>
           <span style={{ color: C_SUCCESS }}>{completeCount} COMPLETE</span>
           <span style={{ color: C_BORDER }}>|</span>
           <span style={{ color: C_PRIMARY }}>{activeCount} ACTIVE</span>
-          <span style={{ color: C_BORDER }}>|</span>
-          <span>47 EVENTS SYNCED</span>
           <span style={{ color: C_BORDER }}>|</span>
           <span style={{ color: C_PRIMARY }}>
             {flagCount} FLAG{flagCount !== 1 ? 'S' : ''} RAISED
@@ -762,83 +697,6 @@ export function Processing() {
           Video processed audio-first · Footage not displayed without explicit user action
         </span>
       </div>
-
-      {/* Audio Analyzer Detail Drawer */}
-      {selected === 'audio-analyzer' && (
-        <div
-          className="fixed right-0 top-0 bottom-0 flex flex-col z-50"
-          style={{
-            width: '38%',
-            background: C_SURFACE,
-            borderLeft: `1px solid ${C_BORDER}`,
-            boxShadow: '-8px 0 32px rgba(0,0,0,0.08)',
-          }}
-        >
-          <div
-            className="flex items-center justify-between flex-shrink-0"
-            style={{
-              borderBottom: `1px solid ${C_BORDER}`,
-              padding: '16px 22px',
-              background: C_SURFACE,
-            }}
-          >
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '0.10em' }}>
-              AUDIO ANALYZER — DETAIL LOG
-            </span>
-            <div className="flex items-center gap-5">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6B6B68' }}>
-                  AUTO-SCROLL
-                </span>
-                <input
-                  type="checkbox"
-                  checked={autoScroll}
-                  onChange={(e) => setAutoScroll(e.target.checked)}
-                  className="w-3 h-3"
-                />
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-                  [{autoScroll ? 'ON' : 'OFF'}]
-                </span>
-              </label>
-              <button
-                onClick={() => setSelected(null)}
-                className="p-1 rounded hover:bg-background"
-              >
-                <X style={{ width: 15, height: 15, color: '#6B6B68' }} />
-              </button>
-            </div>
-          </div>
-          <div
-            ref={logRef}
-            className="flex-1 overflow-y-auto p-6"
-            style={{ fontFamily: 'var(--font-mono)', background: C_BG }}
-          >
-            {audioLogs.map((log, i) => (
-              <div
-                key={i}
-                className={`leading-relaxed mb-1 ${logColor(log.type)}`}
-                style={{ fontSize: 12 }}
-              >
-                <span className="text-foreground-secondary">[{log.timestamp}]</span> {log.message}
-              </div>
-            ))}
-            <div style={{ fontSize: 12, color: '#1A1A1A' }}>
-              [00:01:47] → Processing BODYCAM-02.mp4 (980 MB) — audio track only
-              {cursor && <span style={{ color: C_PRIMARY }}>▊</span>}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
-  );
-}
-
-// Helper: render a SubTile with a HorizArrow after it (except for the last).
-function SubTileWithArrow({ tile, isLast }: { tile: AgentTile; isLast: boolean }) {
-  return (
-    <>
-      <SubTile sa={tile} />
-      {!isLast && <HorizArrow done={tile.status === 'complete'} />}
-    </>
   );
 }

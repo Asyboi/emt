@@ -1,33 +1,35 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Upload, X } from 'lucide-react';
-
-interface UploadedFile {
-  name: string;
-  size: number;
-}
+import { Loader2, Upload, X } from 'lucide-react';
+import { API_BASE } from '../../data/api';
+import { getDataSource } from '../../data/source';
+import type { Case } from '../../types/backend';
 
 export function NewReport() {
   const navigate = useNavigate();
   const [reportTitle, setReportTitle] = useState('');
-  const [epcr, setEpcr] = useState<UploadedFile | null>(null);
-  const [cad, setCad] = useState<UploadedFile | null>(null);
-  const [videos, setVideos] = useState<UploadedFile[]>([]);
+  const [epcr, setEpcr] = useState<File | null>(null);
+  const [cad, setCad] = useState<File | null>(null);
+  const [videos, setVideos] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const canGenerate = reportTitle.trim().length > 0 && epcr && (cad || videos.length > 0);
+  const canGenerate =
+    !submitting &&
+    reportTitle.trim().length > 0 &&
+    epcr !== null &&
+    (cad !== null || videos.length > 0);
 
   const handleFileUpload = (
-    setter: (file: UploadedFile | null) => void
+    setter: (file: File | null) => void
   ) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setter({ name: file.name, size: file.size });
-    }
+    if (file) setter(file);
   };
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setVideos(prev => [...prev, ...files.map(f => ({ name: f.name, size: f.size }))]);
+    const files = Array.from(e.target.files ?? []);
+    setVideos((prev) => [...prev, ...files]);
   };
 
   const formatSize = (bytes: number) => {
@@ -36,8 +38,37 @@ export function NewReport() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  const handleGenerate = () => {
-    navigate('/processing');
+  const handleGenerate = async () => {
+    setError(null);
+    if (getDataSource().mode === 'local') {
+      navigate('/processing/case_01');
+      return;
+    }
+    if (!epcr) {
+      setError('ePCR file is required.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const form = new FormData();
+      form.append('title', reportTitle);
+      form.append('epcr', epcr);
+      if (cad) form.append('cad', cad);
+      videos.forEach((v) => form.append('videos', v));
+      const res = await fetch(`${API_BASE}/api/cases`, {
+        method: 'POST',
+        body: form,
+      });
+      if (!res.ok) {
+        const detail = await res.text();
+        throw new Error(detail || `Upload failed (${res.status})`);
+      }
+      const newCase: Case = await res.json();
+      navigate(`/processing/${newCase.case_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -231,13 +262,23 @@ export function NewReport() {
               </div>
             </div>
 
+            {error && (
+              <div
+                className="mt-6 px-4 py-3 border border-destructive/40 bg-destructive/5 text-xs text-destructive"
+                style={{ fontFamily: 'var(--font-mono)' }}
+              >
+                {error}
+              </div>
+            )}
+
             {/* Generate Button */}
             <button
               onClick={handleGenerate}
               disabled={!canGenerate}
-              className="w-full mt-8 px-6 py-3 bg-primary text-primary-foreground tracking-wide text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+              className="w-full mt-8 px-6 py-3 bg-primary text-primary-foreground tracking-wide text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
             >
-              GENERATE REPORT
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {submitting ? 'UPLOADING…' : 'GENERATE REPORT'}
             </button>
           </div>
 

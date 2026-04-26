@@ -1,5 +1,8 @@
 import type { IncidentReport, IncidentSummary } from '../types';
 import { buildMockReport, mockIncidentList } from '../mock/mock_data';
+import type { Case, QICaseReview } from '../types/backend';
+import { adaptCaseToSummary, adaptReview } from './adapters';
+import { API_BASE } from './api';
 
 // `local` reads from `src/mock/mock_data.ts`. `remote` is a stub that will
 // eventually call the FastAPI backend (cases + SSE pipeline). The mode is
@@ -46,10 +49,16 @@ const localSource: DataSource = {
 const remoteSource: DataSource = {
   mode: 'remote',
   async listIncidents() {
-    throw new Error('Remote data source not implemented yet');
+    const res = await fetch(`${API_BASE}/api/cases`);
+    if (!res.ok) throw new Error(`Failed to list cases (${res.status})`);
+    const cases: Case[] = await res.json();
+    return cases.map((c) => adaptCaseToSummary(c, false));
   },
-  async getIncident(_id: string) {
-    throw new Error('Remote data source not implemented yet');
+  async getIncident(id: string) {
+    const res = await fetch(`${API_BASE}/api/cases/${id}/review`);
+    if (!res.ok) throw new Error(`Review not found for ${id}`);
+    const review: QICaseReview = await res.json();
+    return adaptReview(review);
   },
 };
 

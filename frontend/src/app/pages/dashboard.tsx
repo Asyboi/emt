@@ -7,7 +7,7 @@ export function Dashboard() {
   const handleDemo = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    navigate('/processing?demo=1');
+    navigate('/processing/case_01?demo=1');
   };
 
   return (

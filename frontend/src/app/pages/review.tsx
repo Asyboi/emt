@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ChevronDown, ChevronRight, Circle, MapPin, Video, Volume2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, MapPin, Volume2 } from 'lucide-react';
 import { useIncident } from '../../data/hooks';
 import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
+import { API_BASE } from '../../data/api';
 import type { ReportSection, SectionStatus, TimelineCategory } from '../../types';
 
 type ViewTab = 'map' | 'video' | 'pcr' | 'cad';
@@ -258,12 +259,14 @@ export function Review() {
                   </div>
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-black">
-                    <div className="text-center">
-                      <Video className="w-12 h-12 mx-auto mb-4 text-white/50" />
-                      <div className="text-white/50 text-xs" style={{ fontFamily: 'var(--font-mono)' }}>
-                        VIDEO PLAYER
-                      </div>
-                    </div>
+                    <video
+                      src={`${API_BASE}/api/cases/${resolvedId}/video`}
+                      controls
+                      preload="metadata"
+                      className="max-w-full max-h-full"
+                    >
+                      <track kind="captions" />
+                    </video>
                   </div>
                 )}
               </div>

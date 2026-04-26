@@ -19,7 +19,11 @@ class Settings(BaseSettings):
     PROTOCOLS_DIR: Path = Path("../protocols")
     FIXTURES_DIR: Path = Path("../fixtures")
 
-    FRONTEND_ORIGIN: str = "http://localhost:5173"
+    FRONTEND_ORIGINS: str = "http://localhost:5173"
+
+    @property
+    def frontend_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.FRONTEND_ORIGINS.split(",") if o.strip()]
 
 
 settings = Settings()

@@ -3,6 +3,8 @@ import { Layout } from "./components/layout";
 import { QIReviewLayout } from "./components/qi-review-layout";
 import { Dashboard } from "./pages/dashboard";
 import { NewReport } from "./pages/new-report";
+import { PcrDraft } from "./pages/pcr-draft";
+import { PcrNew } from "./pages/pcr-new";
 import { Processing } from "./pages/processing";
 import { Review } from "./pages/review";
 import { Finalize } from "./pages/finalize";
@@ -25,7 +27,15 @@ export const router = createBrowserRouter([
             Component: NewReport,
           },
           {
-            path: "processing",
+            path: "pcr-new",
+            Component: PcrNew,
+          },
+          {
+            path: "pcr-draft/:caseId",
+            Component: PcrDraft,
+          },
+          {
+            path: "processing/:caseId",
             Component: Processing,
           },
           {

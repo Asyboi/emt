@@ -5,6 +5,149 @@ after every meaningful change. Newest entries at the top of each section.
 
 ## In flight
 
+### PCR Auto-Draft frontend — Step 4 complete (2026-04-25)
+
+Status: **/pcr-draft/:caseId draft review page shipped, route wired.** The
+four-state workhorse page from `docs/pcr_frontend_prompt.md` §Step 4 is in
+place. Steps 5–10 (read-only PCR view, dashboard activation, archive PCR
+tab, /new-report PCR picker, shared highlight util, blank template) still
+pending.
+
+**What changed:**
+
+- `frontend/src/app/pages/pcr-draft.tsx` — new page implementing all
+  four states described in the prompt:
+  - **Generating:** centered card with four animated stage indicators
+    (CAD → video/audio → Sonnet) and a sliding pulse progress bar.
+    Cosmetic only; the backend doesn't emit sub-stage progress for PCR
+    drafting. Driven by elapsed seconds since mount.
+  - **Editor (review & edit):** two-column layout. Left column hosts a
+    custom `HighlightedEditor` — a transparent `<textarea>` layered
+    over a `<div>` backdrop that re-renders on every keystroke,
+    splitting the text on `[UNCONFIRMED]` and giving each token an
+    amber background (`C_HIGHLIGHT`). Both layers share font, size,
+    line-height, padding and `pre-wrap` rules so highlights stay
+    aligned; backdrop scroll is synced via `onScroll` on the textarea.
+    Right column has Evidence Stats, live Unconfirmed Fields count
+    with legend, and a Sections quick-nav that scrolls the textarea by
+    `lineIndex * computed-lineHeight`. Sticky bottom bar with
+    REGENERATE (with confirm prompt) and CONFIRM PCR buttons; shows
+    EDITED tag and remaining-unconfirmed warning.
+  - **Error:** banner with the drafter's `error` text and two
+    actions — REGENERATE (re-POSTs `/pcr-draft`) and WRITE MANUALLY
+    (drops into the editor with an empty body). Triggered both by a
+    fetch failure (`error` from the hook) and by the drafter writing
+    a non-null `error` field onto the saved draft.
+  - **Confirmed:** brief 2.4s success card showing `confirmed_by`,
+    `confirmed_at`, edit flag, and remaining unconfirmed count, then
+    `navigate('/pcr/${caseId}')`. The `/pcr/:caseId` route is Step 5
+    (not yet wired) — confirming in live mode today will hit a
+    React Router 404 until Step 5 lands.
+- `frontend/src/app/routes.tsx` — added the `/pcr-draft/:caseId` child
+  route under `QIReviewLayout`, matching the existing `pcr-new`
+  pattern.
+- Demo / local mode: when `?demo=1` is in the URL or
+  `getDataSource().mode === 'local'`, the page short-circuits the
+  polling hook entirely and works against an inlined `DEMO_DRAFT`
+  with a representative cardiac-arrest PCR body containing six
+  `[UNCONFIRMED]` tokens. Confirm in demo mode fakes the patch
+  response locally and still triggers the navigate to `/pcr/:caseId`.
+  Regenerate in demo mode just resets the editor to the original
+  demo body (no API call). The REGENERATE button is disabled with a
+  tooltip in demo mode to match — but not strictly required.
+
+**Verification — 2026-04-25:**
+
+- `npm run typecheck` — clean.
+- `npm run build` — clean (`1628 modules transformed`, 326 kB JS /
+  100 kB gzip — bundle grew ~6 kB over the prior build for the new
+  page).
+- Manual UI verification deferred — the live polling path needs a
+  running backend with a real `pcr_draft.json` to exercise State 1→2
+  end-to-end; the editor and demo paths are exercised via
+  `/pcr-draft/case_01?demo=1`.
+
+**Known caveats:**
+
+- The CONFIRM button in live mode redirects to `/pcr/:caseId` which
+  doesn't exist yet (Step 5). The PATCH still succeeds and the
+  backend persists the confirmed PCR — only the post-confirm
+  navigation will 404.
+- The highlight utility is currently inlined in `pcr-draft.tsx`.
+  Step 9 (`frontend/src/lib/pcr-highlight.ts`) will pull it out into
+  a shared module so the read-only `/pcr/:caseId` view (Step 5) can
+  reuse it. When Step 9 lands, refactor the inline overlay to import
+  from the lib.
+- The blank PCR template for "WRITE MANUALLY" is currently an empty
+  string — Step 10 will replace this with the
+  `PCR_BLANK_TEMPLATE` constant from `frontend/src/lib/pcr-template.ts`
+  so the user starts from a structured skeleton instead of a blank
+  textarea.
+
+**What's next (PCR Auto-Draft remaining steps):**
+
+- Step 5: `/pcr/:caseId` read-only view (also needed to clear the
+  post-confirm 404 caveat above).
+- Step 6: activate the dashboard PCR Generator card (link target
+  `/pcr-new`, demo target `/pcr-draft/case_01?demo=1`).
+- Step 7: archive PCR tab.
+- Step 8: saved-PCR picker on `/qi-review` (also adds
+  `pcr_source_case_id` form field to backend `POST /api/cases`).
+- Steps 9–10: shared highlight utility + blank template constant.
+
+### PCR Auto-Draft frontend — Step 3 complete (2026-04-25)
+
+Status: **/pcr-new intake page shipped, route wired.** Steps 1–2 (backend
+`pcr_store` + API + frontend types/api/hooks) were already in place from
+prior session work. Steps 4–10 (draft review page, read-only view, dashboard
+activation, archive tab, /new-report PCR picker, highlighting util, blank
+template) still pending.
+
+**What changed:**
+
+- `backend/app/api/cases.py` — `POST /api/cases` now accepts an optional
+  ePCR (`epcr: UploadFile | None`) and a new optional `audio` upload
+  (`mp3`/`wav`/`m4a` → written as `audio.{ext}`). At least one of
+  epcr/audio/video/cad is required. The placeholder `pcr.md` is only
+  written when an ePCR was uploaded — for the PCR draft flow, the
+  drafter will populate `pcr.md` on confirm. Existing 5 case_create
+  tests still pass unchanged.
+- `frontend/src/app/pages/pcr-new.tsx` — new page. Three upload slots
+  (body-cam video, dispatch audio, CAD export — all optional, but at
+  least video or audio required to enable the Generate button).
+  `local` mode short-circuits to `/pcr-draft/case_01?demo=1` without
+  hitting the API. Live mode posts to `/api/cases`, then immediately
+  calls `createPcrDraft(case_id)` and navigates to `/pcr-draft/{id}`.
+  Uses an internal `UploadSlot` component to keep the three zones
+  visually consistent.
+- `frontend/src/app/routes.tsx` — added `/pcr-new` under the
+  `QIReviewLayout` parent. `PcrNew` imported alongside the other page
+  components. `/pcr-draft/:caseId` route still TODO (Step 4).
+
+**Verification:**
+
+- `npm run typecheck` — clean.
+- `uv run ruff check app/api/cases.py` — clean. (Pre-existing
+  `orchestrator.py` unused-import warnings remain — not in scope.)
+- `uv run pytest tests/test_case_create.py -v` — 5/5 passed.
+- Full `pytest -q` shows 33 passed / 3 skipped / 2 failed; both
+  failures (`test_pcr_parser`, `test_drafting`) hit `FileNotFoundError:
+  Case not found: case_01` because the repo `.env` sets `CASES_DIR=`
+  (empty) which resolves the path to the pytest cwd. Pre-existing,
+  unrelated to this change.
+
+**What's next (PCR Auto-Draft remaining steps):**
+
+- Step 4: `/pcr-draft/:caseId` — the four-state draft review page
+  (Generating → Edit → Confirmed; plus Error). Will use the existing
+  `usePcrDraft` polling hook.
+- Step 5: `/pcr/:caseId` read-only view.
+- Step 6: activate the dashboard PCR Generator card.
+- Step 7: archive PCR tab.
+- Step 8: saved-PCR picker on `/qi-review` (also adds
+  `pcr_source_case_id` form field to backend `POST /api/cases`).
+- Steps 9–10: highlight utility + blank template constant.
+
 ### Frontend ↔ backend integration — wiring per `docs/wiring_prompt.md` (2026-04-25)
 
 Status: **research complete, no code changes yet.** Plan is `docs/wiring_prompt.md`
