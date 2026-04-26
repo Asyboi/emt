@@ -14,14 +14,14 @@ from typing import Any
 
 import httpx
 from anthropic import AsyncAnthropic
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from app.config import settings
 
 _client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+@retry(stop=stop_after_attempt(5), wait=wait_random_exponential(min=2, max=30))
 async def claude_haiku(
     messages: list[dict[str, Any]],
     system: str | None = None,
@@ -41,7 +41,7 @@ async def claude_haiku(
     return response.model_dump()
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+@retry(stop=stop_after_attempt(5), wait=wait_random_exponential(min=2, max=30))
 async def claude_sonnet(
     messages: list[dict[str, Any]],
     system: str | None = None,
@@ -61,7 +61,7 @@ async def claude_sonnet(
     return response.model_dump()
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+@retry(stop=stop_after_attempt(5), wait=wait_random_exponential(min=2, max=30))
 async def elevenlabs_transcribe(audio_path: str) -> dict[str, Any]:
     """Transcribe an audio file with ElevenLabs Scribe v1.
 

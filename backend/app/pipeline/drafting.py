@@ -1,14 +1,14 @@
-"""Stage 7 — QI Case Review drafting via Claude Sonnet 4.6.
+"""Stage 7 — QI Case Review drafting via Claude Haiku 4.5.
 
 Composes the final QICaseReview from upstream pipeline outputs. Broken
 into five focused sub-calls so each prompt stays small and one weak
 sub-call doesn't poison the rest:
 
-    A. Header + incident summary + Utstein data        (Sonnet)
-    B. Clinical assessment against per-incident benchmarks  (Sonnet)
-    C. Documentation quality scoring                    (Sonnet)
-    D. Recommendations (crew / agency / follow_up)      (Sonnet)
-    E. Determination (rule-based) + rationale prose     (Sonnet)
+    A. Header + incident summary + Utstein data        (Haiku)
+    B. Clinical assessment against per-incident benchmarks  (Haiku)
+    C. Documentation quality scoring                    (Haiku)
+    D. Recommendations (crew / agency / follow_up)      (Haiku)
+    E. Determination (rule-based) + rationale prose     (Haiku)
 
 Each sub-call has a try/except that falls back to fixture-derived data
 on failure, so the pipeline still produces a valid QICaseReview when
@@ -26,7 +26,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from app.llm_clients import claude_sonnet
+from app.llm_clients import claude_haiku
 from app.pipeline._fixture import (
     fixture_clinical_assessment,
     fixture_documentation_quality,
@@ -252,7 +252,7 @@ async def _draft_header(
     timeline: list[TimelineEntry],
 ) -> _Header:
     try:
-        response = await claude_sonnet(
+        response = await claude_haiku(
             system=QI_HEADER_SYSTEM,
             messages=[
                 {
@@ -324,7 +324,7 @@ async def _draft_clinical_assessment(
 ) -> list[ClinicalAssessmentItem]:
     valid_event_ids = {ev.event_id for entry in timeline for ev in entry.source_events}
     try:
-        response = await claude_sonnet(
+        response = await claude_haiku(
             system=QI_CLINICAL_ASSESSMENT_SYSTEM,
             messages=[
                 {
@@ -376,7 +376,7 @@ async def _draft_documentation_quality(
     timeline: list[TimelineEntry],
 ) -> DocumentationQualityAssessment:
     try:
-        response = await claude_sonnet(
+        response = await claude_haiku(
             system=QI_DOCUMENTATION_QUALITY_SYSTEM,
             messages=[
                 {
@@ -415,7 +415,7 @@ async def _draft_recommendations(
 ) -> list[Recommendation]:
     valid_finding_ids = {f.finding_id for f in findings}
     try:
-        response = await claude_sonnet(
+        response = await claude_haiku(
             system=QI_RECOMMENDATIONS_SYSTEM,
             messages=[
                 {
@@ -470,7 +470,7 @@ async def _draft_determination_rationale(
         sev.value: sum(1 for f in findings if f.severity == sev) for sev in FindingSeverity
     }
     try:
-        response = await claude_sonnet(
+        response = await claude_haiku(
             system=QI_DETERMINATION_RATIONALE_SYSTEM,
             messages=[
                 {

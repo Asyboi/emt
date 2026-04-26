@@ -1,9 +1,8 @@
 """Stage 2 — multi-agent timeline reconciliation.
 
-4-agent sequential chain:
+3-agent reconciliation chain:
   Agent 1 (Haiku)  — semantic clustering of all events
-  Agent 2 (Haiku)  — per-cluster discrepancy scoring     \\ parallel
-  Agent 3 (Haiku)  — per-cluster canonicalization        /
+  Agent R (Haiku)  — per-cluster combined scoring + canonicalization (parallel)
   Agent 4 (Sonnet) — critic verification pass → list[TimelineEntry]
 
 CAD events: when a CADRecord is supplied, synthetic Event objects are
@@ -23,17 +22,14 @@ from typing import Optional
 from app.llm_clients import claude_haiku, claude_sonnet
 from app.prompts import (
     ASSEMBLE_VERIFIED_TIMELINE_TOOL,
-    CANONICALIZE_CLUSTER_TOOL,
     CLUSTER_EVENTS_TOOL,
-    RECONCILIATION_CANON_SYSTEM,
-    RECONCILIATION_CANON_USER_TEMPLATE,
     RECONCILIATION_CLUSTER_SYSTEM,
     RECONCILIATION_CLUSTER_USER_TEMPLATE,
     RECONCILIATION_CRITIC_SYSTEM,
     RECONCILIATION_CRITIC_USER_TEMPLATE,
-    RECONCILIATION_SCORE_SYSTEM,
-    RECONCILIATION_SCORE_USER_TEMPLATE,
-    SCORE_DISCREPANCY_TOOL,
+    RECONCILIATION_REVIEW_SYSTEM,
+    RECONCILIATION_REVIEW_USER_TEMPLATE,
+    REVIEW_CLUSTER_TOOL,
 )
 from app.schemas import (
     CADRecord,
@@ -324,21 +320,24 @@ async def _cluster_events(all_events: list[Event]) -> list[EventCluster]:
     ]
 
 
-async def _score_cluster(cluster: EventCluster, by_id: dict[str, Event]) -> ScoredCluster:
-    """Agent 2: Haiku scores one cluster for discrepancies."""
+async def _review_cluster(
+    cluster: EventCluster, by_id: dict[str, Event]
+) -> tuple[ScoredCluster, DraftTimelineEntry]:
+    """Agent R: one Haiku call that scores AND canonicalizes a cluster."""
     response = await claude_haiku(
-        system=RECONCILIATION_SCORE_SYSTEM,
+        system=RECONCILIATION_REVIEW_SYSTEM,
         messages=[
             {
                 "role": "user",
-                "content": RECONCILIATION_SCORE_USER_TEMPLATE.format(
+                "content": RECONCILIATION_REVIEW_USER_TEMPLATE.format(
                     cluster_id=cluster.cluster_id,
+                    centroid_timestamp_seconds=cluster.centroid_timestamp_seconds,
                     cluster_events_json=_serialize_cluster_events(cluster, by_id),
                 ),
             }
         ],
-        tools=[SCORE_DISCREPANCY_TOOL],
-        max_tokens=512,
+        tools=[REVIEW_CLUSTER_TOOL],
+        max_tokens=1024,
     )
 
     tool_use = next(
@@ -346,13 +345,16 @@ async def _score_cluster(cluster: EventCluster, by_id: dict[str, Event]) -> Scor
     )
     if tool_use is None:
         logger.warning(
-            "Agent 2 (score_discrepancy) returned no tool_use for cluster %s — using deterministic fallback",
+            "Agent R (review_cluster) returned no tool_use for cluster %s — using deterministic fallbacks",
             cluster.cluster_id,
         )
-        return _deterministic_score_fallback(cluster, by_id)
+        return (
+            _deterministic_score_fallback(cluster, by_id),
+            _first_event_fallback(cluster, by_id),
+        )
 
     raw = tool_use["input"]
-    return ScoredCluster(
+    scored = ScoredCluster(
         cluster_id=cluster.cluster_id,
         event_ids=cluster.event_ids,
         centroid_timestamp_seconds=cluster.centroid_timestamp_seconds,
@@ -361,40 +363,7 @@ async def _score_cluster(cluster: EventCluster, by_id: dict[str, Event]) -> Scor
         discrepancy_type=DiscrepancyType(raw["discrepancy_type"]),
         discrepancy_reasoning=raw["discrepancy_reasoning"],
     )
-
-
-async def _canonicalize_cluster(
-    cluster: EventCluster, by_id: dict[str, Event]
-) -> DraftTimelineEntry:
-    """Agent 3: Haiku canonicalizes one cluster into a draft timeline entry."""
-    response = await claude_haiku(
-        system=RECONCILIATION_CANON_SYSTEM,
-        messages=[
-            {
-                "role": "user",
-                "content": RECONCILIATION_CANON_USER_TEMPLATE.format(
-                    cluster_id=cluster.cluster_id,
-                    centroid_timestamp_seconds=cluster.centroid_timestamp_seconds,
-                    cluster_events_json=_serialize_cluster_events(cluster, by_id),
-                ),
-            }
-        ],
-        tools=[CANONICALIZE_CLUSTER_TOOL],
-        max_tokens=512,
-    )
-
-    tool_use = next(
-        (b for b in response["content"] if b["type"] == "tool_use"), None
-    )
-    if tool_use is None:
-        logger.warning(
-            "Agent 3 (canonicalize_cluster) returned no tool_use for cluster %s — using first-event fallback",
-            cluster.cluster_id,
-        )
-        return _first_event_fallback(cluster, by_id)
-
-    raw = tool_use["input"]
-    return DraftTimelineEntry(
+    draft = DraftTimelineEntry(
         cluster_id=cluster.cluster_id,
         event_ids=cluster.event_ids,
         canonical_timestamp_seconds=float(raw["canonical_timestamp_seconds"]),
@@ -402,6 +371,7 @@ async def _canonicalize_cluster(
         canonical_description=raw["canonical_description"],
         match_confidence=float(raw["match_confidence"]),
     )
+    return scored, draft
 
 
 async def _critic_pass(
@@ -481,42 +451,28 @@ async def reconcile(
         logger.warning("Agent 1 returned zero clusters — returning empty timeline")
         return []
 
-    # Agents 2+3 — Per-cluster scoring and canonicalization (parallel, Haiku)
+    # Agent R — Per-cluster review (parallel, Haiku) — one call per cluster
     # return_exceptions=True so a single cluster failure degrades gracefully
-    raw_scored, raw_drafts = await asyncio.gather(
-        asyncio.gather(
-            *[_gated(_score_cluster(c, by_id)) for c in clusters],
-            return_exceptions=True,
-        ),
-        asyncio.gather(
-            *[_gated(_canonicalize_cluster(c, by_id)) for c in clusters],
-            return_exceptions=True,
-        ),
+    raw_results = await asyncio.gather(
+        *[_gated(_review_cluster(c, by_id)) for c in clusters],
+        return_exceptions=True,
     )
 
     scored_list: list[ScoredCluster] = []
-    for cluster, result in zip(clusters, raw_scored):
+    draft_list: list[DraftTimelineEntry] = []
+    for cluster, result in zip(clusters, raw_results):
         if isinstance(result, Exception):
             logger.warning(
-                "Agent 2 scoring failed for cluster %s — using deterministic fallback: %s",
+                "Agent R review failed for cluster %s — using deterministic fallbacks: %s",
                 cluster.cluster_id,
                 result,
             )
             scored_list.append(_deterministic_score_fallback(cluster, by_id))
-        else:
-            scored_list.append(result)
-
-    draft_list: list[DraftTimelineEntry] = []
-    for cluster, result in zip(clusters, raw_drafts):
-        if isinstance(result, Exception):
-            logger.warning(
-                "Agent 3 canonicalization failed for cluster %s — using first-event fallback: %s",
-                cluster.cluster_id,
-                result,
-            )
             draft_list.append(_first_event_fallback(cluster, by_id))
         else:
-            draft_list.append(result)
+            scored, draft = result
+            scored_list.append(scored)
+            draft_list.append(draft)
 
     # Agent 4 — Critic verification pass (sequential, Sonnet)
     try:

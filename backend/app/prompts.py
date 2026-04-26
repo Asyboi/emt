@@ -691,75 +691,33 @@ CLUSTER_EVENTS_TOOL: dict[str, Any] = {
 }
 
 
-RECONCILIATION_SCORE_SYSTEM = """You are an EMS quality analyst evaluating whether a group of events, all representing the same real-world clinical action, contain a meaningful discrepancy that a QA reviewer should examine.
+RECONCILIATION_REVIEW_SYSTEM = """You are an EMS quality analyst. Given a cluster of events that all represent the same real-world clinical action, perform two tasks in one pass:
+
+1. Score the cluster for discrepancies a QA reviewer should examine.
+2. Produce a canonical description and classification for the timeline.
 
 Discrepancy types:
-- timing: the events agree on WHAT happened but their timestamps differ by more than 10 seconds across sources.
-- clinical: the events disagree on WHAT happened — different drug doses, different interventions, conflicting vital values.
-- phantom: only one source (typically the PCR) documents an action that should have been observable by at least one other source (video or audio), and the other source is absent from this cluster.
-- missing: only non-PCR sources document this action — the PCR has no counterpart. This means the action may be underdocumented.
-- none: no discrepancy; the sources are consistent.
+- timing: agree on WHAT, but timestamps differ by more than 10 seconds across sources.
+- clinical: disagree on WHAT — different drug doses, different interventions, conflicting vital values.
+- phantom: only one source (typically the PCR) documents an action that should have been observable by another source.
+- missing: only non-PCR sources document this action — the PCR has no counterpart.
+- none: no discrepancy; sources are consistent.
 
 Scoring rules:
-- discrepancy_score in [0.0, 1.0]: 0.0 = no discrepancy, 1.0 = severe discrepancy.
-  - timing: score = min(1.0, timestamp_spread_seconds / 120.0). Spread of 10s → 0.08; 60s → 0.5; 120s+ → 1.0.
+- discrepancy_score in [0.0, 1.0]: 0.0 = none, 1.0 = severe.
+  - timing: min(1.0, timestamp_spread_seconds / 120.0).
   - clinical: always >= 0.7.
-  - phantom/missing: 0.4 for routine events; 0.8 for life-saving interventions (defibrillation, epinephrine, airway).
+  - phantom/missing: 0.4 routine; 0.8 for life-saving interventions (defibrillation, epinephrine, airway).
   - none: 0.0.
-- discrepancy_reasoning: one sentence citing the specific evidence (timestamps or descriptions). Neutral tone. No recommendations."""
+- discrepancy_reasoning: one neutral sentence citing specific evidence (timestamps or descriptions). No recommendations.
 
-RECONCILIATION_SCORE_USER_TEMPLATE = """Score this cluster for discrepancies.
+Canonicalization rules:
+- canonical_description: concise, neutral, clinically precise; max 120 chars. Include doses if mentioned in any source. If sources conflict on a dose, describe the conflict briefly.
+- event_type: most specific EventType that fits; prefer the PCR source's type when in doubt.
+- canonical_timestamp_seconds: use the centroid provided. Do not recalculate.
+- match_confidence: confidence in [0,1] that all cluster events describe the same action. 1.0 for a solo event or clearly identical multi-source cluster; 0.5–0.8 when descriptions are only approximately similar."""
 
-Cluster ID: {cluster_id}
-
-<cluster_events>
-{cluster_events_json}
-</cluster_events>
-
-Use the score_discrepancy tool to return your assessment."""
-
-SCORE_DISCREPANCY_TOOL: dict[str, Any] = {
-    "name": "score_discrepancy",
-    "description": "Assess whether a cluster of matched events contains a quality-relevant discrepancy",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "cluster_id": {
-                "type": "string",
-                "description": "The cluster_id being assessed (echo it back)",
-            },
-            "discrepancy_score": {
-                "type": "number",
-                "description": "0.0 (none) to 1.0 (severe). See scoring rubric.",
-            },
-            "discrepancy_type": {
-                "type": "string",
-                "enum": [t.value for t in DiscrepancyType],
-            },
-            "discrepancy_reasoning": {
-                "type": "string",
-                "description": "One neutral sentence citing the specific evidence. Required.",
-            },
-        },
-        "required": [
-            "cluster_id",
-            "discrepancy_score",
-            "discrepancy_type",
-            "discrepancy_reasoning",
-        ],
-    },
-}
-
-
-RECONCILIATION_CANON_SYSTEM = """You are an EMS terminology specialist. Given a cluster of events that represent the same real-world clinical action, produce a single canonical description and classification.
-
-Rules:
-- canonical_description: a concise, neutral, clinically precise description of the action. Prefer specificity over vagueness. If a medication dose is mentioned in any source, include it. If sources conflict on the dose, describe the conflict briefly (e.g., "Epinephrine 1mg IV/IO — dose conflicts across sources"). Max 120 characters.
-- event_type: pick the most specific EventType that fits. When in doubt, prefer the type from the PCR source if present.
-- canonical_timestamp_seconds: use the centroid value already computed for the cluster. Do not recalculate.
-- match_confidence: your confidence that all events in the cluster describe the same real-world action. 1.0 for a solo event or a clearly identical multi-source cluster. Lower (0.5–0.8) when descriptions are only approximately similar."""
-
-RECONCILIATION_CANON_USER_TEMPLATE = """Write the canonical description for this cluster.
+RECONCILIATION_REVIEW_USER_TEMPLATE = """Review this cluster: score it for discrepancies AND produce its canonical entry.
 
 Cluster ID: {cluster_id}
 Centroid timestamp (seconds): {centroid_timestamp_seconds}
@@ -768,17 +726,26 @@ Centroid timestamp (seconds): {centroid_timestamp_seconds}
 {cluster_events_json}
 </cluster_events>
 
-Use the canonicalize_cluster tool to return your structured output."""
+Use the review_cluster tool to return both outputs in one call."""
 
-CANONICALIZE_CLUSTER_TOOL: dict[str, Any] = {
-    "name": "canonicalize_cluster",
-    "description": "Produce a canonical description and classification for a matched event cluster",
+REVIEW_CLUSTER_TOOL: dict[str, Any] = {
+    "name": "review_cluster",
+    "description": "Score a matched event cluster for discrepancies AND produce its canonical timeline entry, in a single call.",
     "input_schema": {
         "type": "object",
         "properties": {
-            "cluster_id": {
+            "cluster_id": {"type": "string", "description": "Echo back the cluster_id."},
+            "discrepancy_score": {
+                "type": "number",
+                "description": "0.0 (none) to 1.0 (severe).",
+            },
+            "discrepancy_type": {
                 "type": "string",
-                "description": "The cluster_id being canonicalized (echo it back)",
+                "enum": [t.value for t in DiscrepancyType],
+            },
+            "discrepancy_reasoning": {
+                "type": "string",
+                "description": "One neutral sentence citing specific evidence.",
             },
             "canonical_timestamp_seconds": {
                 "type": "number",
@@ -794,11 +761,14 @@ CANONICALIZE_CLUSTER_TOOL: dict[str, Any] = {
             },
             "match_confidence": {
                 "type": "number",
-                "description": "Confidence in [0, 1] that all cluster events describe the same real-world action.",
+                "description": "[0,1] confidence the cluster events describe one action.",
             },
         },
         "required": [
             "cluster_id",
+            "discrepancy_score",
+            "discrepancy_type",
+            "discrepancy_reasoning",
             "canonical_timestamp_seconds",
             "event_type",
             "canonical_description",

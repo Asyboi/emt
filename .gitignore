@@ -24,6 +24,9 @@ cases/*/audio.*
 cases/*/review.json
 cases/*/aar.json
 
+# Claude Code local runtime
+.claude/scheduled_tasks.lock
+
 # OS
 .DS_Store
 Thumbs.db
