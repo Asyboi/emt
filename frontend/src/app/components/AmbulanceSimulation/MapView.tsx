@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import DeckGL from '@deck.gl/react';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { TripsLayer } from '@deck.gl/geo-layers';
+import { ScenegraphLayer } from '@deck.gl/mesh-layers';
 import Map from 'react-map-gl/mapbox';
 import type { AmbulanceRoute, SimulationEvent, MapMode } from './types';
 
@@ -25,11 +26,14 @@ interface MapViewProps {
   route: AmbulanceRoute;
   events: SimulationEvent[];
   currentPosition: [number, number];
+  currentBearing: number;
   simTime: number;
   activeEvent: SimulationEvent | null;
   visitedEventIds: Set<string>;
   mode: MapMode;
+  pulsePhase: number;
   onEventClick: (event: SimulationEvent) => void;
+  onBackgroundClick: () => void;
   viewState: CameraViewState;
   onViewStateChange: (
     next: CameraViewState,
@@ -41,13 +45,20 @@ export function MapView({
   route,
   events,
   currentPosition,
+  currentBearing,
   simTime,
   activeEvent,
   visitedEventIds,
+  pulsePhase,
   onEventClick,
+  onBackgroundClick,
   viewState,
   onViewStateChange,
 }: MapViewProps) {
+  // 0..1 sinusoidal pulse derived from a wall-clock phase the parent ticks.
+  const pulse01 = (Math.sin(pulsePhase) + 1) / 2;
+  const ringRadius = 14 + 10 * pulse01;
+  const ringAlpha = 80 + Math.round(140 * (1 - pulse01));
   const tripData = [
     {
       waypoints: route.path.map((p, i) => ({
@@ -65,33 +76,70 @@ export function MapView({
         d.waypoints.map((w) => w.coordinates),
       getTimestamps: (d: { waypoints: { timestamp: number }[] }) =>
         d.waypoints.map((w) => w.timestamp),
-      getColor: [255, 200, 0],
+      getColor: [112, 193, 255],
       opacity: 0.9,
       widthMinPixels: 4,
       trailLength: 150,
       currentTime: simTime,
     }),
 
-    new ScatterplotLayer({
+    new ScenegraphLayer({
       id: 'ambulance',
-      data: [currentPosition],
-      getPosition: (d: [number, number]) => d,
-      getFillColor: [255, 255, 255, 255],
-      getRadius: 8,
-      radiusUnits: 'meters',
+      data: [{ position: currentPosition, bearing: currentBearing }],
+      scenegraph: '/models/ambulance.glb',
+      getPosition: (d: { position: [number, number] }) => d.position,
+      // Orientation is [pitch, yaw, roll] in degrees. roll=90 stands a Y-up
+      // glTF model upright; yaw maps mapbox bearing (deg clockwise from north)
+      // to deck.gl's counter-clockwise yaw around vertical.
+      getOrientation: (d: { bearing: number }) => [0, -d.bearing, 90],
+      sizeScale: 3,
+      _lighting: 'pbr',
+      pickable: false,
+      updateTriggers: {
+        getPosition: [currentPosition],
+        getOrientation: [currentBearing],
+      },
     }),
 
+    // Pulsing outer ring — stroked only, no fill, alpha + radius tied to pulse.
     new ScatterplotLayer<SimulationEvent>({
-      id: 'events',
+      id: 'event-rings',
+      data: events,
+      getPosition: (d) => [d.coordinates[0], d.coordinates[1]],
+      filled: false,
+      stroked: true,
+      getLineColor: (d) => {
+        const base = SEVERITY_RGBA[d.severity];
+        if (visitedEventIds.has(d.id)) return [base[0], base[1], base[2], 50];
+        return [base[0], base[1], base[2], ringAlpha];
+      },
+      getRadius: (d) =>
+        activeEvent?.id === d.id ? ringRadius + 8 : ringRadius,
+      getLineWidth: 1.5,
+      lineWidthUnits: 'pixels',
+      radiusUnits: 'meters',
+      pickable: true,
+      onClick: ({ object }) => {
+        if (object) onEventClick(object as SimulationEvent);
+      },
+      updateTriggers: {
+        getLineColor: [activeEvent?.id, visitedEventIds.size, ringAlpha],
+        getRadius: [activeEvent?.id, ringRadius],
+      },
+    }),
+
+    // Solid central dot — small, full-alpha severity color.
+    new ScatterplotLayer<SimulationEvent>({
+      id: 'event-dots',
       data: events,
       getPosition: (d) => [d.coordinates[0], d.coordinates[1]],
       getFillColor: (d) => {
         const base = SEVERITY_RGBA[d.severity];
-        if (visitedEventIds.has(d.id)) return [base[0], base[1], base[2], 60];
+        if (visitedEventIds.has(d.id)) return [base[0], base[1], base[2], 90];
         if (activeEvent?.id === d.id) return [255, 255, 255, 255];
-        return base;
+        return [base[0], base[1], base[2], 255];
       },
-      getRadius: (d) => (activeEvent?.id === d.id ? 18 : 12),
+      getRadius: (d) => (activeEvent?.id === d.id ? 6 : 4),
       radiusUnits: 'meters',
       pickable: true,
       onClick: ({ object }) => {
@@ -152,6 +200,12 @@ export function MapView({
     <DeckGL
       viewState={viewState}
       onViewStateChange={handleViewStateChange}
+      onClick={(info) => {
+        // DeckGL fires onClick for both feature picks and empty-map clicks.
+        // We only want background clicks here — event-marker clicks are
+        // handled by the layer's own onClick.
+        if (!info.object) onBackgroundClick();
+      }}
       controller={{
         dragPan: true,
         dragRotate: true,

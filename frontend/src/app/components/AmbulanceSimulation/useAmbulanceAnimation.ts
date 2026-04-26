@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { AmbulanceRoute, SimulationEvent } from './types';
 
 const ANIMATION_SPEED = 30;
@@ -24,7 +24,7 @@ function getBearing(a: [number, number], b: [number, number]): number {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-function interpolatePosition(
+export function interpolatePosition(
   route: AmbulanceRoute,
   simTime: number
 ): { position: [number, number]; bearing: number } {
@@ -55,8 +55,7 @@ function interpolatePosition(
 
 export function useAmbulanceAnimation(
   route: AmbulanceRoute,
-  events: SimulationEvent[],
-  onEventReached: (event: SimulationEvent) => void
+  events: SimulationEvent[]
 ) {
   const maxTime = route.timestamps[route.timestamps.length - 1];
   const [simTime, setSimTime] = useState(0);
@@ -95,7 +94,6 @@ export function useAmbulanceAnimation(
               playingRef.current = false;
               setIsPlaying(false);
               lastTimeRef.current = undefined;
-              onEventReached(evt);
               return next;
             }
           }
@@ -112,8 +110,20 @@ export function useAmbulanceAnimation(
         rafRef.current = requestAnimationFrame(tick);
       }
     },
-    [route, events, maxTime, onEventReached]
+    [route, events, maxTime]
   );
+
+  // Event whose marker the ambulance is currently within proximity of (if any).
+  // Drives popup visibility — appears on entry, disappears on exit, reappears
+  // on any subsequent revisit.
+  const nearbyEvent = useMemo<SimulationEvent | null>(() => {
+    for (const e of events) {
+      if (haversineDistance(currentPosition, e.coordinates) < PROXIMITY_METERS) {
+        return e;
+      }
+    }
+    return null;
+  }, [events, currentPosition]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -156,6 +166,7 @@ export function useAmbulanceAnimation(
     currentPosition,
     currentBearing,
     visitedEventIds,
+    nearbyEvent,
     play,
     pause,
     reset,
