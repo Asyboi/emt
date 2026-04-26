@@ -3,7 +3,436 @@
 A running record of what's done, what's in flight, and what's blocked. Update
 after every meaningful change. Newest entries at the top of each section.
 
+## In flight
+
+### Frontend ↔ backend integration — wiring per `docs/wiring_prompt.md` (2026-04-25)
+
+Status: **research complete, no code changes yet.** Plan is `docs/wiring_prompt.md`
+(10 steps). Three audit docs written by a previous agent:
+`docs/INTEGRATION_AUDIT.md`, `docs/COMPONENT_AUDIT.md`, `docs/BACKEND_AUDIT.md`.
+Read these first — they cover every seam (API surface, type gap, SSE wiring,
+Vite proxy gap, mock data shape) at line-number resolution.
+
+**Decisions locked (do not re-litigate):**
+
+- **Test runner:** install `vitest` + `@testing-library/react` +
+  `@testing-library/jest-dom` + `jsdom` as dev deps. Add
+  `"test": "vitest run"` and `"test:watch": "vitest"` to
+  `frontend/package.json` scripts. Adapter test
+  (`frontend/src/data/adapters.test.ts`, Step 4) is the most important
+  one — catches backend↔frontend shape mismatches before they hit UI.
+- **Typecheck script:** add `"typecheck": "tsc --noEmit"` to
+  `frontend/package.json`. Run after every step as a gate.
+- **`tsconfig.json`:** does **not** exist in `frontend/` today. Must be
+  created as part of Step 0, matching CLAUDE.md spec: `strict`, `target:
+  ES2022`, `moduleResolution: Bundler`, `jsx: react-jsx`, `@/*` path
+  alias → `src/*`. TypeScript itself is also not installed (no
+  `node_modules/typescript`).
+- **Reconciliation sub-tile animation (Step 7):** UI-driven `setTimeout`
+  chain when `reconciliation` SSE event goes `running` (33% → CLUSTER
+  EVENTS, 66% → REVIEW CLUSTERS, 100% → CRITIQUE TIMELINE). Backend
+  doesn't emit sub-stage events; that's tracked as future work in the
+  prompt. Don't over-engineer it.
+
+**Gaps the wiring_prompt assumes but the repo doesn't have (verified):**
+
+- `frontend/package.json` scripts today: only `dev` and `build`. No
+  `typecheck`, no `test`. CLAUDE.md claims `build` runs `tsc --noEmit`
+  first — that's aspirational; actual `build` is just `vite build`.
+- `frontend/tsconfig.json` does not exist (see decision above).
+- `cases/case_02` and `case_03` have only `pcr.md` (no `review.json`
+  cache). They'll appear in `GET /api/cases` but `GET /review` 404s —
+  Step 5's `listIncidents` correctly marks all as `'draft'` to avoid
+  N+1, so this is fine.
+- Step 8's PDF→markdown PCR extraction is explicitly deferred (the
+  prompt says "write a placeholder pcr.md … proper PDF→markdown
+  extractor is a later task").
+
+**Task list created in this session (use `TaskList` to resume):**
+
+1. Verify tsconfig + add typecheck/test scripts + install deps
+2. Backend `POST /api/cases` + CORS list + env files
+3. Vite proxy + `frontend/src/data/api.ts`
+4. Mirror Pydantic types in `frontend/src/types/backend.ts`
+5. `frontend/src/data/adapters.ts` + `.test.ts`
+6. Replace `remoteSource` stubs with real fetch
+7. Plumb `caseId` through routes + dashboard + new-report + mock IDs
+8. SSE hook + data-driven 8-stage processing page
+9. Wire `/new-report` to upload via FormData
+10. Wire review video tab to `/api/cases/{id}/video`
+11. Final verification (ruff, pytest, typecheck, build, test) + this log
+
+**Step 0 status: ✅ done.** Installed `typescript`, `@types/react`,
+`@types/react-dom`, `@types/node`, `vitest`, `@testing-library/react`,
+`@testing-library/jest-dom`, `jsdom` as dev deps. Created:
+`frontend/tsconfig.json` (strict, ES2022, `Bundler` resolution,
+`react-jsx`, `@/*` → `src/*`, includes `src` + config files; uses
+`types: [vitest/globals, @testing-library/jest-dom, node]` instead of
+project references because composite refs require emit),
+`frontend/vitest.config.ts` (jsdom env, globals on, setupFiles),
+`frontend/vitest.setup.ts` (imports jest-dom matchers),
+`frontend/src/vite-env.d.ts` (vite/client triple-slash + `*.css`
+module decl). Updated `frontend/package.json` scripts:
+`build` is now `tsc --noEmit && vite build`, and added `typecheck`,
+`test`, `test:watch`. Also added `id: string` to the
+`figmaAssetResolver.resolveId` param in `vite.config.ts` to satisfy
+strict mode. Verified `npm run typecheck` passes clean and
+`npm test` runs vitest (no tests found yet — they come in Step 4).
+
+**Step 1 status: ✅ done.** Backend wiring for case creation + CORS list.
+- `backend/app/case_loader.py` — added `next_case_id()` (scans
+  `CASES_DIR` for `case_NN`, returns `case_{max+1:02d}` — 2-digit pad
+  matches existing `case_01..case_03`). Also extended `_build_case` to
+  read optional `metadata.json` from the case dir (used by the new POST
+  endpoint to round-trip the upload `title`).
+- `backend/app/api/cases.py` — added `POST /api/cases` (multipart):
+  required `epcr` (.pdf or .xml only — 400 otherwise, saved verbatim
+  as `pcr_source.{ext}` plus a placeholder `pcr.md`), optional `cad`
+  (saved as `cad.json`), optional `videos[]` (first one saved as
+  `video.mp4`), optional `title` form field (persisted to
+  `metadata.json`). Returns 201 with the full `Case` model via
+  `load_case`. The placeholder pcr.md is `# ePCR\n\nSource file: …\n\n
+  [PCR content to be extracted]\n` per the wiring prompt — real
+  PDF→markdown extraction is a later task.
+- `backend/app/config.py` — renamed `FRONTEND_ORIGIN` →
+  `FRONTEND_ORIGINS` (default unchanged: `http://localhost:5173`).
+  Added a `frontend_origins_list` property that splits on commas and
+  drops blanks.
+- `backend/app/main.py` — `allow_origins=settings.frontend_origins_list`.
+- Repo-root `.env.example` and `.env` — renamed
+  `FRONTEND_ORIGIN=` → `FRONTEND_ORIGINS=http://localhost:5173`.
+- `frontend/.env.example` (new) — `VITE_DATA_SOURCE=remote`,
+  `VITE_API_URL=` (consumed by Step 2's `data/api.ts`).
+- `frontend/.env.local` (new, gitignored via repo-root rule) —
+  `VITE_DATA_SOURCE=local` so plain `npm run dev` keeps the mock-data
+  flow working until the remote source lands in Step 5.
+- Tests: `backend/tests/test_case_create.py` (5 tests, all pass) —
+  covers `next_case_id()` increment + empty-dir cases, the POST
+  happy-path with title/epcr/cad/videos, the 400 on a non-pdf/xml
+  ePCR, and the minimal one-file-only request.
+- Verification: `uv run ruff check` is clean on touched files.
+  `uv run pytest` → 33 passed, 3 skipped, **2 failed** — the two
+  failures (`test_pcr_parser.py::test_parse_pcr_extracts_events_from_case_01`
+  and `test_drafting.py::test_draft_qi_review_with_real_sonnet`) are
+  pre-existing and caused by repo-root `.env` having blank
+  `CASES_DIR=` / `FIXTURES_DIR=` lines (pydantic-settings overrides
+  the defaults with empty paths, so the resolved dirs land at the
+  cwd). They reproduce on `main` without these changes; they are LLM-
+  gated tests that only run because the user has `ANTHROPIC_API_KEY`
+  set. Out of scope for Step 1 — track separately.
+
+**Step 2 status: ✅ done.** Vite proxy + frontend API base URL.
+- `frontend/vite.config.ts` — added `server.proxy['/api'] -> http://localhost:8000`
+  with `changeOrigin: true`.
+- `frontend/src/data/api.ts` (new) — exports
+  `API_BASE = import.meta.env.VITE_API_URL || ''`. In dev the proxy
+  handles routing so the empty string is intentional; production builds
+  set `VITE_API_URL` to the backend's absolute URL.
+- Verification: ran backend (`uvicorn :8000`) + Vite (`:5173`) together;
+  `curl http://localhost:5173/api/cases` returned the same JSON as
+  `curl http://localhost:8000/api/cases`. `npm run typecheck` clean.
+- *Side observation, not in scope for this step:* the live `/api/cases`
+  list includes `.pytest_cache` and `.ruff_cache` as fake "cases".
+  Cause is the pre-existing blank-`CASES_DIR=` line in repo-root `.env`
+  (already flagged in Step 1's verification note); when uvicorn is run
+  from `backend/`, pydantic-settings resolves the empty-string default
+  to `.` and the loader scans every subdir. Track separately — does
+  not block Step 2.
+
+**Step 3 status: ✅ done.** Pydantic ↔ TS contract.
+- `frontend/src/types/backend.ts` (new) — every model in
+  `backend/app/schemas.py` mirrored as a TS interface, with
+  string-union types for the Python `str, Enum`s. `datetime` becomes
+  `string` (ISO over JSON). snake_case preserved end-to-end so
+  payloads cast directly without a translation layer.
+- Includes all enums and models the wiring prompt's Step 3 lists, plus
+  a few extras the schema actually defines that the prompt omitted —
+  noted here so future readers know the file is the superset of the
+  prompt: `EventCluster`, `ScoredCluster`, `DraftTimelineEntry`
+  (intermediate reconciliation types) are NOT included because they're
+  internal to the pipeline and never crossed the API boundary; if they
+  ever do they'll need to be added here.
+- `frontend/src/types.ts` (UI-shaped types) is **untouched** per the
+  prompt — adapters in Step 4 bridge the two type systems.
+- Verification: `npm run typecheck` clean.
+
+**Step 4 status: ✅ done.** Backend `QICaseReview` → frontend `IncidentReport`
+adapter + tests.
+- `frontend/src/data/adapters.ts` (new) — exports `adaptReview` and
+  `adaptCaseToSummary`. Pure functions, no I/O. Helper layout: format
+  utilities (`pad2`, `formatMmSs`, `formatHhMmSsFromIso`, `preview`),
+  per-section content builders (one per the 9 `ReportSection` slots),
+  timeline-event mapper with `categoryFor` rule
+  (arrival/transport_decision → cad; vital_signs/rhythm_check → vitals;
+  else dispatch on `source_events[0].source` falling back to `pcr`),
+  CAD-log synthesizer that conditionally pushes the optional
+  hospital/transport rows, and a `mapFindingsToPipeline` that flips
+  `severity === 'info'` to `'success'` and everything else to
+  `'warning'`. `adaptReview` outputs `pipeline.elapsedSeconds = 0`,
+  `progressPct = 100`, empty `agentTiles` and `audioLogs` because a
+  cached completed review has no live processing telemetry — those slots
+  are only meaningful while the SSE stream is active (Step 7).
+  `adaptCaseToSummary(c, hasReview)` follows the wiring prompt: `Case`
+  alone has no crew info so the summary uses the `case_id` as the crew
+  placeholder; the real crew arrives only with the full review.
+- Sections 7 (STRENGTHS), 8 (AREAS FOR IMPROVEMENT), and 9
+  (RECOMMENDED FOLLOW-UP) all run filters before rendering and emit a
+  "no X recorded" sentinel when the filter empties the list — keeps the
+  UI from rendering empty section bodies.
+- `frontend/src/data/adapters.test.ts` (new) — 14 vitest tests against
+  `fixtures/sample_qi_review.json` (loaded via `node:fs.readFileSync`
+  with a path resolved off `__dirname` since the fixtures dir lives
+  outside the frontend `tsconfig.include`). Coverage: top-level field
+  mapping, all 9 sections present with correct titles and shape,
+  STRENGTHS/AREAS-FOR-IMPROVEMENT filter rules, recommendation grouping
+  with priority prefix, timeline-event time format + category dispatch,
+  pcr metadata derivation, CAD log empty when `cad_record === null`,
+  CAD log full 7-row synthesis when present, CAD log skipping the
+  optional transport/hospital rows when those datetimes are null,
+  pipeline scaffold + finding severity mapping, and a "no undefined
+  values in any required field" sweep. Plus 2 tests on
+  `adaptCaseToSummary` (finalized vs draft).
+- Verification: `npm run typecheck` clean. `npm test` → 14 passed.
+
+**Step 5 status: ✅ done.** `remoteSource` now hits the backend.
+- `frontend/src/data/source.ts` — replaced both stubs:
+  `listIncidents()` does `fetch(\`${API_BASE}/api/cases\`)` and maps
+  through `adaptCaseToSummary(c, false)` (no per-case review probe to
+  avoid N+1; the review page loads the full data on demand). `getIncident(id)`
+  fetches `/api/cases/{id}/review` and runs the JSON through
+  `adaptReview`. Both add an `r.ok` guard with a clear error message —
+  the prompt's spec only guarded the review fetch, but having
+  `listIncidents` surface backend failures is cheap and the UI's existing
+  error boundaries display the message.
+- `frontend/src/data/source.test.ts` (new) — 3 vitest tests using
+  `vi.spyOn(globalThis, 'fetch')`: list happy-path adapts the case array
+  to summaries, get happy-path adapts a `QICaseReview` to a full
+  `IncidentReport`, and a 404 on `/review` throws an error containing
+  the case id. The tests force `?remote` via
+  `window.history.replaceState` in `beforeEach` so `getDataSource()`
+  picks the remote branch even though jsdom defaults to a no-search URL.
+- Verification: `npm run typecheck` clean; `npm test` → 17 passed
+  (14 adapter + 3 source). Live curl smoke against the backend is
+  blocked by the pre-existing blank-`CASES_DIR=` bug noted under Step 1
+  — out of scope here, the unit tests fully cover the wiring.
+
+Next up: Step 6 (route params: `/processing/:caseId` + plumb the new id
+through dashboard, new-report, and the mock data).
+
+**Critical files to re-read before resuming** (the audits cite line
+numbers but the underlying files may move):
+- `docs/wiring_prompt.md` — the plan, locked
+- `docs/INTEGRATION_AUDIT.md`, `docs/COMPONENT_AUDIT.md`,
+  `docs/BACKEND_AUDIT.md` — context
+- `backend/app/schemas.py` — locked schema contract (do **not** modify)
+- `backend/app/api/cases.py`, `case_loader.py`, `config.py`, `main.py`
+  — all touched by Step 1
+- `frontend/src/types.ts`, `data/source.ts`, `data/hooks.ts`,
+  `mock/mock_data.ts`, `vite.config.ts`, `package.json` — all touched
+  by Steps 0/2-9
+
 ## Completed
+
+### Frontend rewrite — Figma Make export + multi-page shadcn app (2026-04-25)
+
+Wholesale replacement of the Phase 3 / QI-Step-4 3-pane UI. The new
+frontend is a Figma Make export (the `package.json` name is still
+`@figma/my-make-file`) reorganized into a five-route React app with
+shadcn/Radix UI, react-router 7, and a UI-shaped data model that is
+**not** the backend's `QICaseReview`. As a result the app currently runs
+entirely on bundled mock data — the backend wiring point exists but is
+unimplemented. Landed across two commits: `cc87485 new frontend` (the
+big bang) and `d870567 updated backend` (despite the title, this commit
+is page polish + the data-source abstraction; the only backend-adjacent
+file it touched is `pcr_autodrafter_plan.txt` at the repo root).
+
+**Routes (`frontend/src/app/routes.tsx`).**
+
+- `/` → `NewReport` — title field + drag/drop uploaders for ePCR / CAD /
+  videos; "Generate" gate requires title + ePCR + (CAD or ≥1 video)
+- `/processing` → `Processing` — animated multi-agent dataflow viz
+  (`SubTile` cards wired by SVG arrows, `RECON_H`/`SEQ_H`/`CONV_W`
+  layout constants); reads from `useIncident(PRIMARY_MOCK_INCIDENT_ID)`
+- `/review/:incidentId` → `Review` — left rail with `AGENT NARRATIVE`
+  sections (collapsible, citations, status badges), right pane with
+  tabbed `MAP | VIDEO | PCR | CAD` view + a 5-track timeline
+  (`CAD EVENTS / GPS PATH / VIDEO SEGMENTS / PCR ENTRIES / VITALS`)
+- `/finalize/:incidentId` → `Finalize` — section-by-section approval
+  flow with diff toggle, quick-revision tags
+  (`MISSING DETAIL / INCORRECT TIMELINE / PROTOCOL MISCITED / TONE`),
+  free-text feedback
+- `/archive` → `Archive` — searchable list, routes drafts to
+  `/review/:id` and finalized reports to `/finalize/:id`
+- `Layout` (`src/app/components/layout.tsx`) is currently a passthrough
+  `<Outlet/>` — no shared chrome yet
+
+**Data layer (`frontend/src/data/`).**
+
+- `src/types.ts` (NEW) — UI-shaped types: `IncidentReport`,
+  `IncidentSummary`, `ReportSection` (id / title / status / preview /
+  content / citations / edits / feedback), `TimelineEvent`,
+  `AgentTile`, `PipelineFinding`, `PipelineLogEntry`, `PcrMetadata`,
+  `CadEvent`. Status enums (`SectionStatus`, `AgentStatus`,
+  `ReportLifecycle`, `TimelineCategory`, `LogType`, `FindingType`).
+  These are intentionally framing-of-the-screen types, not a mirror of
+  `backend/app/schemas.py:QICaseReview` — adapter work is deferred.
+- `src/data/source.ts` (NEW) — `DataSource` interface with two
+  implementations: `localSource` reads from
+  `src/mock/mock_data.ts`; `remoteSource.{listIncidents,getIncident}`
+  literally `throw new Error('Remote data source not implemented yet')`.
+  `resolveMode()` checks `?local` / `?remote` URL params then
+  `VITE_DATA_SOURCE` env, defaulting to `local`. Mode is resolved per
+  call (not at module load) so the URL toggle is hot-applicable.
+- `src/data/hooks.ts` (NEW) — `useIncidentList()` and `useIncident(id)`
+  expose `{data, loading, error}` and call the resolved data source.
+  Cancellation guard via a `cancelled` ref so unmounted components
+  don't `setState`.
+- `src/mock/mock_data.ts` (NEW, ~300 lines) — one canonical
+  `primaryReport` (incident `INC-2026-04-0231`, OHCA cardiac arrest
+  matching the case_01 narrative), 5 `sections`, timeline events
+  spanning all 5 categories, agent tiles, mock pipeline findings +
+  audio logs, CAD events. `mockIncidentList` carries 8 entries for the
+  archive screen. Unknown incident ids are synthesized by re-keying
+  `primaryReport` via `buildMockReport(id)` so every archive row is
+  navigable.
+
+**Component library (`src/app/components/ui/`).**
+
+40+ shadcn primitives wrapped over Radix UI (accordion, alert-dialog,
+button, calendar, carousel, chart, command, dropdown-menu, form,
+hover-card, input-otp, navigation-menu, sidebar, table, tabs, etc.) —
+verbatim from the Figma Make scaffold. `ImageWithFallback.tsx` (under
+`components/figma/`) handles broken-image fallbacks. None of the old
+`AARPane` / `FindingCard` / `VideoPane` / `PCRPane` /
+`PipelineProgress` / `TimelineMarker` / `Skeleton` / `ErrorBoundary`
+components survived the rewrite — they were deleted along with
+`hooks/{useCase,usePCR,usePipelineStream}.ts`, `lib/{api,demo,format}.ts`,
+`lib/cn.ts` (moved to `components/ui/utils.ts`), and
+`types/schemas.ts`.
+
+**Bundled fixtures.**
+
+- `frontend/public/demo/sample_qi_review.json` — **deleted**
+- `frontend/public/demo/sample_pcr.md` — **deleted**
+- `frontend/public/_headers` and `frontend/public/_redirects` —
+  re-added in `d870567` after being moved out of `frontend/` root in
+  `cc87485` (now properly under `public/` so Cloudflare Pages serves
+  them at the root)
+
+**Tooling changes / regressions.**
+
+- `frontend/tsconfig.json` — **deleted**. There is no longer a TS
+  project file. Vite transpiles TSX without type checking.
+- `frontend/tsconfig.node.json` — **deleted**.
+- `package.json` scripts — only `dev` and `build` remain;
+  `typecheck` and `preview` are gone. `npm run build` no longer runs
+  `tsc --noEmit` first, so a type error will not fail the build (or
+  even surface unless an editor flags it). The verification command
+  `cd frontend && npm run typecheck` documented in CLAUDE.md / `.claude/SKILL.md`
+  no longer exists.
+- `frontend/tailwind.config.js` — **deleted**. Tailwind v4 (`tailwindcss@4.1.12`,
+  `@tailwindcss/vite@4.1.12`) replaces v3; config is now CSS-side
+  (`src/styles/tailwind.css` does
+  `@import 'tailwindcss' source(none); @source '../**/*.{js,ts,jsx,tsx}';`).
+  `src/styles/theme.css` carries the design tokens.
+- `frontend/postcss.config.js` → `postcss.config.mjs`.
+- `frontend/vite.config.ts` — the **`/api` → `http://localhost:8000`
+  proxy is gone**. With `localSource` as the default this isn't blocking
+  today, but it means the moment `remoteSource` is implemented, dev mode
+  will need either the proxy restored or a CORS-compliant absolute base
+  URL. Adds a `figmaAssetResolver` plugin that maps `figma:asset/<file>`
+  imports to `src/assets/<file>` (none used yet).
+- `pnpm-workspace.yaml` (NEW) at `frontend/` root — single-package
+  workspace, primarily so the pinned `vite@6.3.5` `pnpm.overrides`
+  resolves.
+- New deps (in addition to shadcn/Radix): `@mui/material@7.3.5` +
+  `@emotion/{react,styled}` (currently unused — Figma Make import
+  artifact), `motion@12.23.24` (animations), `react-dnd` +
+  `react-dnd-html5-backend` (drag/drop on the upload page),
+  `react-resizable-panels`, `react-day-picker`, `recharts`,
+  `react-slick`, `react-popper`, `canvas-confetti`, `cmdk`,
+  `embla-carousel-react`, `input-otp`, `vaul`, `sonner`,
+  `next-themes`, `tw-animate-css`. Many are likely dead weight and
+  should be pruned in a follow-up.
+
+**Imports of pasted source (`src/imports/pasted_text/`).**
+
+Three markdown design briefs from the Figma Make session:
+`ems-qi-report-tool.md`, `incident-processing-page.md`,
+`salvage-processing-incident.md`. Carried in the repo as design
+reference; not imported by any code path.
+
+**Verification — 2026-04-25:**
+
+- `cd frontend && npm install` → resolves cleanly
+- `cd frontend && npm run build` → succeeds. `dist/` produced.
+- `cd frontend && npm run dev` → Vite boots on `:5173`, all five
+  routes render against `localSource` mock data. URL `?remote` flips
+  the data source; `useIncidentList()` then surfaces the
+  "Remote data source not implemented yet" error in the archive
+  screen as expected.
+- **No `typecheck` step exists anymore** — typing is no longer
+  enforced at build time. Confirmed by inspection of `package.json`
+  and absence of `tsconfig.json`.
+- Backend untouched: `cd backend && uv run pytest -v` still passes
+  the same set as the prior PROGRESS entry (23 passed, 6 LLM-gated
+  skipped). Backend continues to serve `GET /api/cases/{id}/review`
+  and the SSE `/stream`; no client consumes them today.
+
+**Outstanding work — backend hookup:**
+
+1. **Implement `remoteSource` in `src/data/source.ts`** — at minimum,
+   `listIncidents()` → `GET /api/cases` and `getIncident(id)` →
+   `GET /api/cases/{id}/review`. Likely also a separate channel for
+   PCR text (`GET /api/cases/{id}/pcr`) since the backend keeps PCR
+   markdown out of `QICaseReview`.
+2. **Write a `QICaseReview → IncidentReport` adapter.** The shapes
+   diverge significantly: backend has `incident_summary`, `timeline`
+   (list of `TimelineEntry` with `source_events`), `findings` (with
+   `evidence_event_ids` + `evidence_timestamp_seconds`),
+   `clinical_assessment`, `documentation_quality`, `protocol_checks`,
+   `recommendations`, `determination`. The frontend talks in
+   `sections[]` (titled blocks with preview/content/citations),
+   `agentTiles[]`, `pipeline.findings[]`, `pipeline.audioLogs[]`,
+   `cadLog[]`, `timelineEvents[]` keyed by `TimelineCategory`. Most
+   of these have no 1:1 — the adapter will need to project the
+   review into the section/timeline/agent-tile model the UI expects
+   (or, alternatively, evolve the UI types to mirror the backend
+   directly and revisit `types.ts`).
+3. **Wire the SSE pipeline stream** into `/processing`. The page's
+   `agentTiles` already model running/complete/waiting states; map
+   them to the backend's seven `PipelineStage` values and consume
+   `/api/cases/{id}/stream` to drive transitions. The final
+   `complete` event's `review` payload feeds straight into the
+   adapter from (2).
+4. **Restore the `/api` proxy** in `vite.config.ts` (or commit to
+   `VITE_API_URL` always pointing at an absolute backend URL with
+   CORS). Without one of the two, dev-mode remote-source calls hit
+   the Vite server itself and 404.
+5. **Reinstate type checking.** Add `tsconfig.json` (the deleted
+   one was minimal — `target: ES2022`, `jsx: react-jsx`, `strict: true`,
+   `moduleResolution: bundler`) and a `typecheck` script
+   (`tsc --noEmit`); make `build` run it first. Until this is back,
+   the schema-mirror discipline (snake_case enums, literal unions)
+   that Phase 1 locked in is unenforced on the frontend side.
+
+**Outstanding work — bookkeeping:**
+
+- `docs/ARCHITECTURE.md` topology diagram still shows the old
+  `Browser ↔ Pages ↔ FastAPI` path with cached `aar.json`; update
+  the cache filename to `review.json` and note the data-source
+  abstraction once the remote hookup lands.
+- `docs/PLAN.md` "Critical demo path" still describes the
+  click-finding → seek-video → highlight-PCR interaction. The new UI
+  has analogous affordances (timeline tracks + map/video/pcr/cad
+  tabs on the Review page) but the wiring isn't there yet.
+- `pcr_autodrafter_plan.txt` at the repo root is a backend feature
+  spec, separate from this entry; not yet promoted into `docs/`.
+- Dead-dep audit: `@mui/material` + `@emotion/*` appear unused;
+  several others (`react-slick`, `embla-carousel-react`,
+  `react-popper`, `react-responsive-masonry`, `input-otp`,
+  `canvas-confetti`) likely too. A `depcheck` pass would reduce
+  install time and bundle size.
 
 ### QI Case Review Update — Step 4: Frontend (basic / placeholder) (2026-04-25)
 
