@@ -6,7 +6,7 @@ type LogoProps = {
 
 export function Logo({ size = 22, showWordmark = true, fontSize = 20 }: LogoProps) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
       <img
         src="/calyx-logo.png"
         alt="Calyx"
@@ -21,6 +21,8 @@ export function Logo({ size = 22, showWordmark = true, fontSize = 20 }: LogoProp
             letterSpacing: "0.18em",
             textTransform: "uppercase",
             color: "var(--text)",
+            lineHeight: 1,
+            display: "inline-block",
           }}
         >
           CALYX

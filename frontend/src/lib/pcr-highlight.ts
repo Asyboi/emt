@@ -5,8 +5,8 @@ const UNCONFIRMED_TOKEN = '[UNCONFIRMED]';
 const SECTION_RULE_RE = /^={20,}$/;
 
 const DEFAULT_TOKEN_STYLE: CSSProperties = {
-  background: 'rgba(184, 115, 46, 0.18)',
-  color: '#7A4C1F',
+  background: 'color-mix(in srgb, var(--primary) 18%, transparent)',
+  color: 'var(--primary-strong)',
   borderRadius: 2,
   padding: '0 2px',
 };

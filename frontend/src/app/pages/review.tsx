@@ -69,11 +69,34 @@ export function Review() {
     });
   };
 
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="min-h-screen bg-background flex flex-col items-center justify-center gap-2 px-6"
+      >
+        <div
+          className="text-xs tracking-[0.15em]"
+          style={{ fontFamily: 'var(--font-mono)', color: 'var(--destructive)' }}
+        >
+          COULDN'T LOAD INCIDENT
+        </div>
+        <div className="text-sm text-foreground-secondary max-w-md text-center">
+          {error.message}. Refresh to retry — or check that the backend is running on port 8000.
+        </div>
+      </div>
+    );
+  }
+
   if (loading || !incident) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div
+        role="status"
+        aria-live="polite"
+        className="min-h-screen bg-background flex items-center justify-center"
+      >
         <div className="text-sm text-foreground-secondary" style={{ fontFamily: 'var(--font-mono)' }}>
-          {error ? `Error: ${error.message}` : 'Loading incident…'}
+          Loading incident…
         </div>
       </div>
     );
@@ -136,42 +159,64 @@ export function Review() {
             {TRACK_LABELS.map(({ label, key }) => {
               const isExpanded = expandedTracks.has(key);
               const trackEvents = incident.timelineEvents.filter((e) => e.category === key);
+              const panelId = `track-panel-${key}`;
+              const triggerId = `track-trigger-${key}`;
 
               return (
                 <div key={key}>
                   <button
+                    id={triggerId}
                     onClick={() => toggleTrack(key)}
+                    aria-expanded={isExpanded}
+                    aria-controls={panelId}
                     className="w-full flex items-center gap-2 py-1 text-[11px] tracking-wider text-foreground-secondary hover:text-foreground transition-colors"
                     style={{ fontFamily: 'var(--font-mono)' }}
                   >
-                    {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    {isExpanded ? (
+                      <ChevronDown className="w-3 h-3" aria-hidden />
+                    ) : (
+                      <ChevronRight className="w-3 h-3" aria-hidden />
+                    )}
                     {label}
+                    <span className="sr-only">
+                      , {trackEvents.length} {trackEvents.length === 1 ? 'event' : 'events'}
+                    </span>
                   </button>
                   {isExpanded && (
-                    <div className="ml-5 mt-1 space-y-2">
-                      {trackEvents.map((event, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setSelectedEvent(event.time)}
-                          className={`w-full flex items-start gap-2 py-1.5 px-2 text-left text-[11px] transition-colors ${
-                            selectedEvent === event.time
-                              ? 'bg-primary/10 border-l-2 border-primary -ml-[2px]'
-                              : 'hover:bg-background/50'
-                          }`}
-                        >
-                          <Circle className="w-2 h-2 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <div className="font-mono text-foreground-secondary">{event.time}</div>
-                            <div className="font-mono text-foreground">{event.label}</div>
-                          </div>
-                        </button>
-                      ))}
+                    <div
+                      id={panelId}
+                      role="region"
+                      aria-labelledby={triggerId}
+                      className="ml-5 mt-1 space-y-2"
+                    >
+                      {trackEvents.map((event, idx) => {
+                        const isSelected = selectedEvent === event.time;
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedEvent(event.time)}
+                            aria-current={isSelected ? 'true' : undefined}
+                            aria-label={`Jump to ${event.time}, ${event.label}`}
+                            className={`w-full flex items-start gap-2 py-1.5 px-2 text-left text-[11px] transition-colors ${
+                              isSelected
+                                ? 'bg-primary/10 border-l-2 border-primary -ml-[2px]'
+                                : 'hover:bg-background/50'
+                            }`}
+                          >
+                            <Circle className="w-2 h-2 mt-0.5 flex-shrink-0" aria-hidden />
+                            <div className="flex-1">
+                              <div className="font-mono text-foreground-secondary">{event.time}</div>
+                              <div className="font-mono text-foreground">{event.label}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
                       {trackEvents.length === 0 && (
                         <div
                           className="px-2 py-1 text-[10px] text-foreground-secondary"
                           style={{ fontFamily: 'var(--font-mono)' }}
                         >
-                          (no entries)
+                          No {label.toLowerCase()} for this incident.
                         </div>
                       )}
                     </div>
@@ -185,27 +230,53 @@ export function Review() {
         {/* Center column - Context Viewer */}
         <div className="w-[40%] border-r border-border bg-background overflow-hidden flex flex-col">
           {/* Tabs */}
-          <div className="border-b border-border flex" style={{ fontFamily: 'var(--font-mono)' }}>
-            {(['map', 'video', 'pcr', 'cad'] as ViewTab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-3 text-xs tracking-wider transition-colors relative ${
-                  activeTab === tab
-                    ? 'text-foreground'
-                    : 'text-foreground-secondary hover:text-foreground'
-                }`}
-              >
-                {tab === 'pcr' ? 'PCR SOURCE' : tab === 'cad' ? 'CAD LOG' : tab.toUpperCase()}
-                {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-primary" />}
-              </button>
-            ))}
+          <div
+            role="tablist"
+            aria-label="Context viewer"
+            className="border-b border-border flex"
+            style={{ fontFamily: 'var(--font-mono)' }}
+          >
+            {(['map', 'video', 'pcr', 'cad'] as ViewTab[]).map((tab) => {
+              const selected = activeTab === tab;
+              const tabLabel =
+                tab === 'pcr' ? 'PCR SOURCE' : tab === 'cad' ? 'CAD LOG' : tab.toUpperCase();
+              return (
+                <button
+                  key={tab}
+                  id={`viewer-tab-${tab}`}
+                  role="tab"
+                  type="button"
+                  aria-selected={selected}
+                  aria-controls={`viewer-panel-${tab}`}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-4 py-3 text-xs tracking-wider transition-colors relative ${
+                    selected
+                      ? 'text-foreground'
+                      : 'text-foreground-secondary hover:text-foreground'
+                  }`}
+                >
+                  {tabLabel}
+                  {selected && (
+                    <div
+                      aria-hidden
+                      className="absolute bottom-0 left-0 right-0 h-[1px] bg-primary"
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-y-auto">
+          <div
+            role="tabpanel"
+            id={`viewer-panel-${activeTab}`}
+            aria-labelledby={`viewer-tab-${activeTab}`}
+            className="flex-1 overflow-y-auto"
+          >
             {activeTab === 'map' && (
-              <div className="h-full relative bg-[#E8E7E3] flex items-center justify-center">
+              <div className="h-full relative flex items-center justify-center" style={{ background: 'var(--subcard)' }}>
                 <div
                   className="absolute top-4 right-4 bg-surface border border-border px-3 py-2 text-xs"
                   style={{ fontFamily: 'var(--font-mono)' }}
@@ -214,13 +285,13 @@ export function Review() {
                   <div className="text-foreground">34.0522, -118.2437</div>
                 </div>
                 <div className="flex flex-col items-center gap-3 text-foreground-secondary">
-                  <MapPin className="w-8 h-8" />
+                  <MapPin className="w-8 h-8" aria-hidden />
                   <div className="text-xs tracking-wide">MAP VIEW</div>
                   <div
                     className="text-[11px] text-center px-8"
                     style={{ fontFamily: 'var(--font-mono)' }}
                   >
-                    Route visualization with unit tracking
+                    Route playback isn't wired up in this build. Use the timeline to step through events.
                   </div>
                 </div>
               </div>
@@ -231,7 +302,7 @@ export function Review() {
                 {!showVideoFootage ? (
                   <div className="max-w-md text-center">
                     <div className="mb-8">
-                      <Volume2 className="w-12 h-12 mx-auto mb-4 text-foreground-secondary" />
+                      <Volume2 className="w-12 h-12 mx-auto mb-4 text-foreground-secondary" aria-hidden />
                       <div className="text-sm tracking-wide mb-6" style={{ fontFamily: 'var(--font-mono)' }}>
                         AUDIO ONLY
                       </div>

@@ -7,12 +7,12 @@ import { getDataSource } from '../../data/source';
 import { highlightUnconfirmed } from '../../lib/pcr-highlight';
 import type { PCRDraft } from '../../types/backend';
 
-// ── Design tokens (mirror pcr-draft.tsx) ─────────────────────────────────────
-const C_SUCCESS = '#3D5A3D';
-const C_PRIMARY = '#B8732E';
-const C_MUTED = '#9A9890';
-const C_HIGHLIGHT = 'rgba(184, 115, 46, 0.18)';
-const C_HIGHLIGHT_TEXT = '#7A4C1F';
+// ── Design tokens (resolved from theme.css :root) ────────────────────────────
+const C_SUCCESS = 'var(--success)';
+const C_PRIMARY = 'var(--primary)';
+const C_MUTED = 'var(--text-2)';
+const C_HIGHLIGHT = 'color-mix(in srgb, var(--primary) 18%, transparent)';
+const C_HIGHLIGHT_TEXT = 'var(--primary-strong)';
 
 const FONT_MONO = 'var(--font-mono)';
 
@@ -136,7 +136,7 @@ function PageShell({
           {isDemo && (
             <span
               className="ml-2 px-2 py-0.5 border border-border text-[10px] tracking-wider"
-              style={{ background: '#FAF9F5', color: C_MUTED }}
+              style={{ background: 'var(--surface)', color: C_MUTED }}
             >
               DEMO
             </span>
@@ -190,7 +190,7 @@ function NotConfirmedState({
           />
           <h2
             className="text-xs tracking-[0.18em] mb-3"
-            style={{ fontFamily: 'var(--font-sans)', color: '#1A1A1A' }}
+            style={{ fontFamily: 'var(--font-sans)', color: 'var(--text)' }}
           >
             PCR NOT YET CONFIRMED
           </h2>
@@ -236,7 +236,7 @@ function PageErrorState({
         <div className="w-full max-w-[460px] bg-surface border border-border p-8 text-center">
           <h2
             className="text-xs tracking-[0.18em] mb-3"
-            style={{ fontFamily: 'var(--font-sans)', color: '#9B2C2C' }}
+            style={{ fontFamily: 'var(--font-sans)', color: 'var(--destructive)' }}
           >
             COULD NOT LOAD PCR
           </h2>
@@ -329,9 +329,9 @@ function ReadOnlyPcr({
                   className="px-2 py-1 text-[10px] tracking-wider rounded-sm"
                   style={{
                     fontFamily: FONT_MONO,
-                    background: 'rgba(184,115,46,0.10)',
+                    background: 'color-mix(in srgb, var(--primary) 10%, transparent)',
                     color: C_PRIMARY,
-                    border: `1px solid rgba(184,115,46,0.28)`,
+                    border: '1px solid color-mix(in srgb, var(--primary) 28%, transparent)',
                   }}
                 >
                   {draft.unconfirmed_count} UNCONFIRMED REMAINING
@@ -342,9 +342,9 @@ function ReadOnlyPcr({
                   className="px-2 py-1 text-[10px] tracking-wider rounded-sm"
                   style={{
                     fontFamily: FONT_MONO,
-                    background: 'rgba(73,108,148,0.10)',
-                    color: '#3F5E80',
-                    border: `1px solid rgba(73,108,148,0.28)`,
+                    background: 'color-mix(in srgb, var(--primary) 12%, transparent)',
+                    color: 'var(--primary-strong)',
+                    border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
                   }}
                 >
                   EMT EDITED
@@ -381,7 +381,7 @@ function ReadOnlyPcr({
           {/* Body */}
           <div
             className="bg-surface border border-border"
-            style={{ background: '#FAF9F5' }}
+            style={{ background: 'var(--surface)' }}
           >
             <pre
               className="m-0 overflow-x-auto"
@@ -393,7 +393,7 @@ function ReadOnlyPcr({
                 whiteSpace: 'pre-wrap',
                 wordWrap: 'break-word',
                 overflowWrap: 'break-word',
-                color: '#1A1A1A',
+                color: 'var(--text)',
               }}
             >
               {highlighted}

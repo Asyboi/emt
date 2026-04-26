@@ -1,10 +1,14 @@
 import { Reveal } from "../lib/reveal";
 
-const STATS = [
-  { v: "<3%", l: "OF EMS CALLS REVIEWED TODAY" },
-  { v: "6 HRS+", l: "TO RECONSTRUCT ONE INCIDENT MANUALLY" },
-  { v: "1 IN 4", l: "MEDICS SCREEN POSITIVE FOR PTSD" },
-  { v: "$12M", l: "AVG. LIABILITY PER MISSED DEVIATION" },
+const ANCHOR = {
+  v: "<3%",
+  l: "of EMS calls today get a full quality review.",
+};
+
+const SUPPORTING = [
+  { v: "6 HR+", l: "to reconstruct one incident by hand" },
+  { v: "1 IN 4", l: "medics screen positive for PTSD" },
+  { v: "$12M", l: "average liability per missed deviation" },
 ];
 
 export function StatsBand() {
@@ -18,42 +22,83 @@ export function StatsBand() {
     >
       <div className="container">
         <Reveal>
-          <div className="section-marker" style={{ marginBottom: 56 }}>
-            00 · WHY THIS MATTERS
+          <div className="section-marker" style={{ marginBottom: 72 }}>
+            00 / WHY THIS MATTERS
           </div>
         </Reveal>
+
         <div
+          className="stats-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            borderTop: "1px solid var(--border)",
+            gridTemplateColumns: "1.4fr 1fr",
+            columnGap: 80,
+            rowGap: 56,
+            alignItems: "start",
           }}
         >
-          {STATS.map((s, i) => (
-            <Reveal
-              key={i}
-              delay={i * 0.08}
+          <Reveal>
+            <div
+              className="display"
               style={{
-                padding: "40px 32px 32px 0",
-                borderRight: i < STATS.length - 1 ? "1px solid var(--border)" : "none",
-                paddingLeft: i > 0 ? 32 : 0,
+                fontSize: "clamp(112px, 16vw, 240px)",
+                fontWeight: 300,
+                letterSpacing: "-0.04em",
+                lineHeight: 0.92,
+                marginBottom: 28,
               }}
             >
-              <div
-                className="display"
+              {ANCHOR.v}
+            </div>
+            <p
+              style={{
+                fontSize: "clamp(18px, 1.6vw, 22px)",
+                color: "var(--text-2)",
+                lineHeight: 1.4,
+                maxWidth: "26ch",
+              }}
+            >
+              {ANCHOR.l}
+            </p>
+          </Reveal>
+
+          <div style={{ borderTop: "1px solid var(--border)" }}>
+            {SUPPORTING.map((s, i) => (
+              <Reveal
+                key={i}
+                delay={0.1 + i * 0.08}
                 style={{
-                  fontSize: "clamp(56px, 7vw, 96px)",
-                  marginBottom: 16,
-                  fontWeight: 300,
+                  display: "grid",
+                  gridTemplateColumns: "minmax(120px, auto) 1fr",
+                  columnGap: 28,
+                  alignItems: "baseline",
+                  padding: "26px 0",
+                  borderBottom: "1px solid var(--border)",
                 }}
               >
-                {s.v}
-              </div>
-              <div className="label" style={{ maxWidth: 240, lineHeight: 1.5 }}>
-                {s.l}
-              </div>
-            </Reveal>
-          ))}
+                <span
+                  className="display"
+                  style={{
+                    fontSize: "clamp(32px, 3.6vw, 52px)",
+                    fontWeight: 300,
+                    letterSpacing: "-0.025em",
+                    lineHeight: 1,
+                  }}
+                >
+                  {s.v}
+                </span>
+                <span
+                  style={{
+                    fontSize: 14,
+                    color: "var(--text-2)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {s.l}
+                </span>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </div>
     </section>

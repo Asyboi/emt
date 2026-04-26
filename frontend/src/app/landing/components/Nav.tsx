@@ -37,27 +37,24 @@ export function Nav() {
           justifyContent: "space-between",
         }}
       >
-        <Logo size={29} fontSize={26} />
+        <Logo size={22} fontSize={20} />
         <div
           style={{ display: "flex", alignItems: "center", gap: 32 }}
           className="nav-links"
+          aria-hidden
         >
           {NAV_ITEMS.map((item) => (
-            <a
+            <span
               key={item}
-              href="#"
               className="mono"
               style={{
                 fontSize: 11,
                 color: "var(--text-2)",
                 letterSpacing: "0.14em",
-                transition: "color 0.2s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-2)")}
             >
               {item}
-            </a>
+            </span>
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
