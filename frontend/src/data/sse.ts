@@ -36,20 +36,34 @@ const EMPTY_STATE: ProcessingState = {
   elapsedSeconds: 0,
 };
 
-// Local-mode pipeline: stages run in the same shape the backend emits, paced
-// to feel real without dragging out a click-through demo. Tweak STEP_MS to
-// speed up / slow down the simulation.
-const LOCAL_STEP_MS = 650;
-const LOCAL_STAGE_ORDER: PipelineStage[] = [
+// Local-mode pipeline: stages run in the same shape the backend emits.
+// The four extraction stages overlap (matching asyncio.gather) and the
+// four sequential stages run back-to-back. Per-stage durations are tuned
+// so the on-screen sub-agent reveals (reconciliation chain, drafting
+// waves) have time to play before the parent stage snaps to complete.
+const LOCAL_PARALLEL_STAGES: PipelineStage[] = [
   'cad_parsing',
   'pcr_parsing',
   'video_analysis',
   'audio_analysis',
+];
+const LOCAL_SEQUENTIAL_STAGES: PipelineStage[] = [
   'reconciliation',
   'protocol_check',
   'findings',
   'drafting',
 ];
+
+const LOCAL_DURATION_MS: Record<string, number> = {
+  cad_parsing: 1500,
+  pcr_parsing: 2400,
+  video_analysis: 3200,
+  audio_analysis: 2800,
+  reconciliation: 10000, // 4 sub-agents × ~2s + buffer
+  protocol_check: 1800,
+  findings: 2400,
+  drafting: 7000, // wave1 (3s) + gate (~1s) + wave2 (~2s) + buffer
+};
 
 export function useProcessingStream(
   caseId: string | undefined,
@@ -101,8 +115,7 @@ export function useProcessingStream(
 
       const timeouts: number[] = [];
 
-      LOCAL_STAGE_ORDER.forEach((stage, idx) => {
-        // Mark running at idx*STEP_MS
+      const scheduleRunning = (stage: PipelineStage, at: number) => {
         timeouts.push(
           window.setTimeout(() => {
             if (aborted) return;
@@ -114,10 +127,11 @@ export function useProcessingStream(
               });
               return next;
             });
-          }, idx * LOCAL_STEP_MS),
+          }, at),
         );
+      };
 
-        // Mark complete at (idx+1)*STEP_MS
+      const scheduleComplete = (stage: PipelineStage, at: number) => {
         timeouts.push(
           window.setTimeout(() => {
             if (aborted) return;
@@ -131,21 +145,38 @@ export function useProcessingStream(
               });
               return next;
             });
-          }, (idx + 1) * LOCAL_STEP_MS),
+          }, at),
         );
+      };
+
+      // Parallel block — all four start at t=0 and finish independently.
+      LOCAL_PARALLEL_STAGES.forEach((stage) => {
+        const dur = LOCAL_DURATION_MS[stage] ?? 2000;
+        scheduleRunning(stage, 0);
+        scheduleComplete(stage, dur);
       });
 
-      // After every stage completes, synthesize the review.
+      const parallelEnd = Math.max(
+        ...LOCAL_PARALLEL_STAGES.map((s) => LOCAL_DURATION_MS[s] ?? 2000),
+      );
+
+      // Sequential block — runs strictly after the parallel block resolves.
+      let cursor = parallelEnd;
+      LOCAL_SEQUENTIAL_STAGES.forEach((stage) => {
+        const dur = LOCAL_DURATION_MS[stage] ?? 2000;
+        scheduleRunning(stage, cursor);
+        scheduleComplete(stage, cursor + dur);
+        cursor += dur;
+      });
+
+      // Synthesize the review once everything has completed.
       timeouts.push(
-        window.setTimeout(
-          () => {
-            if (aborted) return;
-            setReview(buildMockReport(caseId));
-            setIsComplete(true);
-            stopTicker();
-          },
-          LOCAL_STAGE_ORDER.length * LOCAL_STEP_MS + 200,
-        ),
+        window.setTimeout(() => {
+          if (aborted) return;
+          setReview(buildMockReport(caseId));
+          setIsComplete(true);
+          stopTicker();
+        }, cursor + 300),
       );
 
       return () => {

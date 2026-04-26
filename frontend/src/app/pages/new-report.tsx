@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { Loader2, Upload, X } from 'lucide-react';
 import { API_BASE } from '../../data/api';
 import { useSavedPcrs } from '../../data/pcr-hooks';
@@ -105,19 +105,6 @@ export function NewReport() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top bar */}
-      <div className="border-b border-border px-8 py-4 flex items-center justify-between">
-        <h1 className="tracking-[0.2em] text-sm" style={{ fontFamily: 'var(--font-mono)' }}>
-          CALYX
-        </h1>
-        <Link
-          to="/archive"
-          className="text-sm tracking-wide hover:text-primary transition-colors"
-        >
-          SAVED REPORTS
-        </Link>
-      </div>
-
       {/* Main content */}
       <div className="flex items-start justify-center pt-20 px-4">
         <div className="w-full max-w-[600px]">

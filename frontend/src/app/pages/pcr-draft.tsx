@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { AlertTriangle, Check, CheckCircle2, Circle, Loader2, RefreshCw } from 'lucide-react';
 
 import { confirmPcrDraft, createPcrDraft } from '../../data/pcr-api';
@@ -214,25 +214,15 @@ function GeneratingState({ caseId }: { caseId: string }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <div className="border-b border-border px-8 py-4 flex items-center justify-between">
-        <Link
-          to="/dashboard"
-          className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
-          style={{ fontFamily: FONT_MONO }}
-        >
-          CALYX
-        </Link>
-        <span
-          className="text-xs tracking-wide text-foreground-secondary"
-          style={{ fontFamily: FONT_MONO }}
-        >
-          {caseId}
-        </span>
-      </div>
-
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-[520px]">
           <div className="bg-surface border border-border p-8">
+            <div
+              className="flex items-center justify-between text-[10px] tracking-[0.15em] text-foreground-secondary mb-4"
+              style={{ fontFamily: FONT_MONO }}
+            >
+              <span>{caseId}</span>
+            </div>
             <h2
               className="text-xs tracking-[0.15em] mb-1 text-foreground-secondary"
               style={{ fontFamily: 'var(--font-sans)' }}
@@ -336,24 +326,14 @@ function ErrorState({
 }: ErrorStateProps) {
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <div className="border-b border-border px-8 py-4 flex items-center justify-between">
-        <Link
-          to="/dashboard"
-          className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
-          style={{ fontFamily: FONT_MONO }}
-        >
-          CALYX
-        </Link>
-        <span
-          className="text-xs tracking-wide text-foreground-secondary"
-          style={{ fontFamily: FONT_MONO }}
-        >
-          {caseId}
-        </span>
-      </div>
-
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-[560px] bg-surface border border-border p-8">
+          <div
+            className="flex items-center justify-between text-[10px] tracking-[0.15em] text-foreground-secondary mb-4"
+            style={{ fontFamily: FONT_MONO }}
+          >
+            <span>{caseId}</span>
+          </div>
           <div className="flex items-start gap-3 mb-6">
             <AlertTriangle
               aria-hidden
@@ -495,37 +475,14 @@ function EditorState({
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Top bar */}
-      <div className="border-b border-border px-8 py-4 flex items-center justify-between flex-shrink-0">
-        <Link
-          to="/dashboard"
-          className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
-          style={{ fontFamily: FONT_MONO }}
-        >
-          CALYX
-        </Link>
-        <div
-          className="flex items-center gap-3 text-xs"
-          style={{ fontFamily: FONT_MONO }}
-        >
-          <span className="text-foreground-secondary">PCR DRAFT</span>
-          <span className="text-foreground-secondary">/</span>
-          <span>{caseId}</span>
-          {isDemo && (
-            <span
-              className="ml-2 px-2 py-0.5 border border-border text-[10px] tracking-wider"
-              style={{ background: 'var(--surface)', color: C_MUTED }}
-            >
-              DEMO
-            </span>
-          )}
-        </div>
-        <Link
-          to="/archive"
-          className="text-sm tracking-wide hover:text-primary transition-colors"
-        >
-          SAVED REPORTS
-        </Link>
+      {/* Context strip */}
+      <div
+        className="border-b border-border px-8 py-3 flex items-center gap-3 text-[11px] tracking-[0.15em] text-foreground-secondary flex-shrink-0"
+        style={{ fontFamily: FONT_MONO }}
+      >
+        <span>PCR DRAFT</span>
+        <span>/</span>
+        <span className="text-foreground">{caseId}</span>
       </div>
 
       {/* Two-column body */}

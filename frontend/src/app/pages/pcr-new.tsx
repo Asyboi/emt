@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { Loader2, Upload, X } from 'lucide-react';
 
 import { API_BASE } from '../../data/api';
@@ -115,23 +115,6 @@ export function PcrNew() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top bar */}
-      <div className="border-b border-border px-8 py-4 flex items-center justify-between">
-        <Link
-          to="/dashboard"
-          className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
-          style={{ fontFamily: 'var(--font-mono)' }}
-        >
-          CALYX
-        </Link>
-        <Link
-          to="/archive"
-          className="text-sm tracking-wide hover:text-primary transition-colors"
-        >
-          SAVED REPORTS
-        </Link>
-      </div>
-
       {/* Main content */}
       <div className="flex items-start justify-center pt-20 px-4">
         <div className="w-full max-w-[600px]">

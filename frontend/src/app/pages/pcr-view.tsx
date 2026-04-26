@@ -102,45 +102,20 @@ const formatTimestamp = (iso: string | null): string => {
 // ── Page shell (header bar shared across all sub-states) ─────────────────────
 function PageShell({
   caseId,
-  isDemo,
   children,
 }: {
   caseId: string;
-  isDemo: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <div className="border-b border-border px-8 py-4 flex items-center justify-between flex-shrink-0">
-        <Link
-          to="/"
-          className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
-          style={{ fontFamily: FONT_MONO }}
-        >
-          CALYX
-        </Link>
-        <div
-          className="flex items-center gap-3 text-xs"
-          style={{ fontFamily: FONT_MONO }}
-        >
-          <span className="text-foreground-secondary">PCR</span>
-          <span className="text-foreground-secondary">/</span>
-          <span>{caseId}</span>
-          {isDemo && (
-            <span
-              className="ml-2 px-2 py-0.5 border border-border text-[10px] tracking-wider"
-              style={{ background: 'var(--surface)', color: C_MUTED }}
-            >
-              DEMO
-            </span>
-          )}
-        </div>
-        <Link
-          to="/archive"
-          className="text-sm tracking-wide hover:text-primary transition-colors"
-        >
-          SAVED REPORTS
-        </Link>
+      <div
+        className="border-b border-border px-8 py-3 flex items-center gap-3 text-[11px] tracking-[0.15em] text-foreground-secondary flex-shrink-0"
+        style={{ fontFamily: FONT_MONO }}
+      >
+        <span>PCR</span>
+        <span>/</span>
+        <span className="text-foreground">{caseId}</span>
       </div>
       {children}
     </div>
@@ -148,9 +123,9 @@ function PageShell({
 }
 
 // ── Loading sub-state ────────────────────────────────────────────────────────
-function LoadingState({ caseId, isDemo }: { caseId: string; isDemo: boolean }) {
+function LoadingState({ caseId }: { caseId: string }) {
   return (
-    <PageShell caseId={caseId} isDemo={isDemo}>
+    <PageShell caseId={caseId} >
       <div className="flex-1 flex items-center justify-center">
         <div
           className="text-xs tracking-wide text-foreground-secondary"
@@ -166,15 +141,13 @@ function LoadingState({ caseId, isDemo }: { caseId: string; isDemo: boolean }) {
 // ── Not-confirmed sub-state ──────────────────────────────────────────────────
 function NotConfirmedState({
   caseId,
-  isDemo,
   message,
 }: {
   caseId: string;
-  isDemo: boolean;
   message: string;
 }) {
   return (
-    <PageShell caseId={caseId} isDemo={isDemo}>
+    <PageShell caseId={caseId} >
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-[460px] bg-surface border border-border p-8 text-center">
           <FileText
@@ -216,15 +189,13 @@ function NotConfirmedState({
 // ── Error sub-state ──────────────────────────────────────────────────────────
 function PageErrorState({
   caseId,
-  isDemo,
   errorMessage,
 }: {
   caseId: string;
-  isDemo: boolean;
   errorMessage: string;
 }) {
   return (
-    <PageShell caseId={caseId} isDemo={isDemo}>
+    <PageShell caseId={caseId} >
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-[460px] bg-surface border border-border p-8 text-center">
           <h2
@@ -448,11 +419,9 @@ function SectionRowView({ row }: { row: SectionRow }) {
 // ── Read-only PCR view ───────────────────────────────────────────────────────
 function ReadOnlyPcr({
   caseId,
-  isDemo,
   draft,
 }: {
   caseId: string;
-  isDemo: boolean;
   draft: PCRDraft;
 }) {
   const [copied, setCopied] = useState(false);
@@ -470,7 +439,7 @@ function ReadOnlyPcr({
   };
 
   return (
-    <PageShell caseId={caseId} isDemo={isDemo}>
+    <PageShell caseId={caseId} >
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1120px] px-8 py-8">
           {/* Header card */}
@@ -727,18 +696,17 @@ export function PcrView() {
   }
 
   if (loading) {
-    return <LoadingState caseId={caseId} isDemo={isDemo} />;
+    return <LoadingState caseId={caseId} />;
   }
 
   if (error) {
-    return <PageErrorState caseId={caseId} isDemo={isDemo} errorMessage={error} />;
+    return <PageErrorState caseId={caseId} errorMessage={error} />;
   }
 
   if (!draft) {
     return (
       <PageErrorState
         caseId={caseId}
-        isDemo={isDemo}
         errorMessage="No PCR draft was returned by the server."
       />
     );
@@ -748,11 +716,10 @@ export function PcrView() {
     return (
       <NotConfirmedState
         caseId={caseId}
-        isDemo={isDemo}
         message="This PCR has not been confirmed yet. Open the draft to review and confirm it."
       />
     );
   }
 
-  return <ReadOnlyPcr caseId={caseId} isDemo={isDemo} draft={draft} />;
+  return <ReadOnlyPcr caseId={caseId} draft={draft} />;
 }
