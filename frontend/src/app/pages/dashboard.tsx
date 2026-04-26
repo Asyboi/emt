@@ -50,7 +50,7 @@ const ENTRIES: Entry[] = [
 
 function DashboardCard({ entry }: { entry: Entry }) {
   return (
-    <div className="relative flex flex-col border border-border bg-background min-h-[640px] overflow-hidden">
+    <div className="relative flex flex-col border border-border bg-background overflow-hidden">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-[0.04]"
@@ -173,17 +173,17 @@ function DashboardCard({ entry }: { entry: Entry }) {
 
 export function Dashboard() {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-[1200px] px-10 pt-10 pb-24">
+    <div className="h-[calc(100vh-57px)] overflow-hidden bg-background flex items-center justify-center px-10">
+      <div className="w-full max-w-[1040px] flex flex-col">
         <div
-          className="flex items-center gap-3 text-[11px] tracking-[0.18em] text-foreground-secondary mb-10"
+          className="flex items-center gap-3 text-[11px] tracking-[0.18em] text-foreground-secondary mb-8"
           style={{ fontFamily: FONT_MONO }}
         >
           <span className="block h-px w-6 bg-foreground-secondary/60" aria-hidden />
           DASHBOARD
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
           {ENTRIES.map((e) => (
             <DashboardCard key={e.n} entry={e} />
           ))}

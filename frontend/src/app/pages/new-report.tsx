@@ -23,6 +23,7 @@ export function NewReport() {
   const [epcr, setEpcr] = useState<File | null>(null);
   const [cad, setCad] = useState<File | null>(null);
   const [videos, setVideos] = useState<File[]>([]);
+  const [audio, setAudio] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [epcrSource, setEpcrSource] = useState<EpcrSource>('upload');
@@ -42,7 +43,7 @@ export function NewReport() {
     !submitting &&
     reportTitle.trim().length > 0 &&
     epcrProvided &&
-    (cad !== null || videos.length > 0);
+    (cad !== null || videos.length > 0 || audio !== null);
 
   const handleFileUpload = (
     setter: (file: File | null) => void
@@ -87,6 +88,7 @@ export function NewReport() {
       }
       if (cad) form.append('cad', cad);
       videos.forEach((v) => form.append('videos', v));
+      if (audio) form.append('audio', audio);
       const res = await fetch(`${API_BASE}/api/cases`, {
         method: 'POST',
         body: form,
@@ -360,24 +362,40 @@ export function NewReport() {
                 </div>
               </div>
 
-              {/* Dispatch Audio (Disabled) */}
-              <div className="opacity-40">
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="block text-xs tracking-wide text-foreground-secondary">
-                    DISPATCH AUDIO
-                  </label>
-                  <span
-                    className="text-[10px] px-2 py-0.5 border border-border bg-background tracking-wider"
-                    style={{ fontFamily: 'var(--font-mono)' }}
-                  >
-                    STRETCH / V2
-                  </span>
-                </div>
-                <div className="border border-border bg-background p-4 cursor-not-allowed">
-                  <div className="flex items-center gap-2 text-sm text-foreground-secondary">
-                    <Upload className="w-4 h-4" />
-                    <span className="tracking-wide">CHOOSE FILE</span>
-                  </div>
+              {/* Dispatch Audio */}
+              <div>
+                <label className="block text-xs tracking-wide mb-2 text-foreground-secondary">
+                  DISPATCH AUDIO (MP3 / WAV / M4A)
+                </label>
+                <div className="border border-border bg-background p-4">
+                  {audio ? (
+                    <div className="flex items-center justify-between">
+                      <div style={{ fontFamily: 'var(--font-mono)' }} className="text-sm">
+                        <div className="text-foreground">{audio.name}</div>
+                        <div className="text-xs text-foreground-secondary">{formatSize(audio.size)}</div>
+                      </div>
+                      <button
+                        onClick={() => setAudio(null)}
+                        className="p-1 hover:text-destructive transition-colors"
+                        aria-label="Remove audio file"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="block cursor-pointer">
+                      <input
+                        type="file"
+                        accept=".mp3,.wav,.m4a,audio/*"
+                        onChange={handleFileUpload(setAudio)}
+                        className="hidden"
+                      />
+                      <div className="flex items-center gap-2 text-sm text-foreground-secondary hover:text-foreground transition-colors">
+                        <Upload className="w-4 h-4" />
+                        <span className="tracking-wide">CHOOSE FILE</span>
+                      </div>
+                    </label>
+                  )}
                 </div>
               </div>
             </div>
