@@ -118,7 +118,7 @@ export function PcrNew() {
       {/* Top bar */}
       <div className="border-b border-border px-8 py-4 flex items-center justify-between">
         <Link
-          to="/"
+          to="/dashboard"
           className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
           style={{ fontFamily: 'var(--font-mono)' }}
         >

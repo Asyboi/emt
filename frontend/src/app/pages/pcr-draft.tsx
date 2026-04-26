@@ -252,7 +252,7 @@ function GeneratingState({ caseId }: { caseId: string }) {
     <div className="min-h-screen bg-background flex flex-col">
       <div className="border-b border-border px-8 py-4 flex items-center justify-between">
         <Link
-          to="/"
+          to="/dashboard"
           className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
           style={{ fontFamily: FONT_MONO }}
         >
@@ -374,7 +374,7 @@ function ErrorState({
     <div className="min-h-screen bg-background flex flex-col">
       <div className="border-b border-border px-8 py-4 flex items-center justify-between">
         <Link
-          to="/"
+          to="/dashboard"
           className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
           style={{ fontFamily: FONT_MONO }}
         >
@@ -533,7 +533,7 @@ function EditorState({
       {/* Top bar */}
       <div className="border-b border-border px-8 py-4 flex items-center justify-between flex-shrink-0">
         <Link
-          to="/"
+          to="/dashboard"
           className="tracking-[0.2em] text-sm hover:text-primary transition-colors"
           style={{ fontFamily: FONT_MONO }}
         >

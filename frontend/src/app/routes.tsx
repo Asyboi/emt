@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/layout";
 import { QIReviewLayout } from "./components/qi-review-layout";
+import { Landing } from "./landing/Landing";
 import { Dashboard } from "./pages/dashboard";
 import { NewReport } from "./pages/new-report";
 import { PcrDraft } from "./pages/pcr-draft";
@@ -12,11 +13,15 @@ import { Archive } from "./pages/archive";
 
 export const router = createBrowserRouter([
   {
+    index: true,
+    Component: Landing,
+  },
+  {
     path: "/",
     Component: Layout,
     children: [
       {
-        index: true,
+        path: "dashboard",
         Component: Dashboard,
       },
       {

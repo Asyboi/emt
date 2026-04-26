@@ -16,7 +16,7 @@ if (navEntry?.type === "reload") {
     sessionStorage.getItem("calyx-demo") === "1";
   if (wasDemo) {
     sessionStorage.removeItem("calyx-demo");
-    window.history.replaceState({}, "", "/");
+    window.history.replaceState({}, "", "/dashboard");
   }
 }
 
