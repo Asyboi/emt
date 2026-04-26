@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useIncident } from '../../data/hooks';
+import { loadApprovals, saveApprovals } from '../../data/approvals';
 import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
 import type { ReportSection, SectionStatus } from '../../types';
+import { SectionView } from '../components/section-views/SectionView';
 
 const QUICK_TAGS = [
   'MISSING DETAIL',
@@ -28,15 +30,28 @@ export function Finalize() {
 
   useEffect(() => {
     if (incident) {
-      setSections(incident.sections.map((s) => ({ ...s })));
+      const saved = loadApprovals(incident.id);
+      const approvedIds = new Set(saved.approvedSectionIds);
+      setSections(
+        incident.sections.map((s) =>
+          approvedIds.has(s.id) ? { ...s, status: 'approved' as SectionStatus } : { ...s },
+        ),
+      );
       const needsRevision = incident.sections.find((s) => s.status === 'needs-revision');
-      if (needsRevision) {
+      if (needsRevision && !approvedIds.has(needsRevision.id)) {
         setRevisionSection(needsRevision.id);
         setFeedbackText(needsRevision.feedback ?? '');
         setSelectedTags(new Set(needsRevision.feedback ? ['INCORRECT TIMELINE'] : []));
       }
     }
   }, [incident]);
+
+  // Helper: persist the current approved-section IDs to localStorage.
+  const persistApprovedIds = (next: ReportSection[]) => {
+    if (!incident) return;
+    const ids = next.filter((s) => s.status === 'approved').map((s) => s.id);
+    saveApprovals(incident.id, { approvedSectionIds: ids });
+  };
 
   const approvedCount = sections.filter((s) => s.status === 'approved').length;
   const pendingCount = sections.filter((s) => s.status === 'pending').length;
@@ -72,11 +87,20 @@ export function Finalize() {
   };
 
   const approveSection = (id: number) => {
-    setSections(sections.map((s) => (s.id === id ? { ...s, status: 'approved' } : s)));
+    const next = sections.map((s): ReportSection =>
+      s.id === id ? { ...s, status: 'approved' } : s,
+    );
+    setSections(next);
+    persistApprovedIds(next);
+    if (expandedSection === id) setExpandedSection(null);
   };
 
   const undoApproval = (id: number) => {
-    setSections(sections.map((s) => (s.id === id ? { ...s, status: 'pending' } : s)));
+    const next = sections.map((s): ReportSection =>
+      s.id === id ? { ...s, status: 'pending' } : s,
+    );
+    setSections(next);
+    persistApprovedIds(next);
   };
 
   const requestRevision = (id: number) => {
@@ -229,9 +253,15 @@ export function Finalize() {
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-foreground-secondary leading-relaxed mb-2">
-                    {isExpanded ? section.content : section.preview}
-                  </p>
+                  {isExpanded ? (
+                    <div className="mb-2">
+                      <SectionView section={section} />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-foreground-secondary leading-relaxed mb-2">
+                      {section.preview}
+                    </p>
+                  )}
                   <button
                     onClick={() => toggleExpand(section.id)}
                     className="text-[11px] text-foreground-secondary hover:text-foreground transition-colors"
@@ -369,13 +399,20 @@ export function Finalize() {
         </p>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate(`/review/${incident.id}`)}
+            onClick={() => {
+              persistApprovedIds(sections);
+              navigate(`/review/${incident.id}`);
+            }}
             className="px-6 py-2.5 border border-border text-sm tracking-wide hover:bg-background transition-colors"
           >
             BACK TO REVIEW
           </button>
           <button
-            onClick={() => navigate('/archive')}
+            onClick={() => {
+              const ids = sections.filter((s) => s.status === 'approved').map((s) => s.id);
+              saveApprovals(incident.id, { approvedSectionIds: ids, finalized: true });
+              navigate('/archive');
+            }}
             disabled={!allApproved}
             className="px-6 py-2.5 bg-primary text-primary-foreground text-sm tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
           >

@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ChevronDown, ChevronRight, Circle, MapPin, Volume2 } from 'lucide-react';
 import { useIncident } from '../../data/hooks';
+import { loadApprovals, saveApprovals } from '../../data/approvals';
 import { PRIMARY_MOCK_INCIDENT_ID } from '../../mock/mock_data';
 import { API_BASE } from '../../data/api';
 import type { ReportSection, SectionStatus, TimelineCategory } from '../../types';
+import { SectionView } from '../components/section-views/SectionView';
 
 type ViewTab = 'map' | 'video' | 'pcr' | 'cad';
 
@@ -35,7 +37,16 @@ export function Review() {
 
   useEffect(() => {
     if (incident) {
-      setSections(incident.sections.map((s) => ({ ...s, status: 'draft' as SectionStatus })));
+      const saved = loadApprovals(incident.id);
+      const approvedIds = new Set(saved.approvedSectionIds);
+      setSections(
+        incident.sections.map((s) => ({
+          ...s,
+          status: approvedIds.has(s.id)
+            ? ('approved' as SectionStatus)
+            : ('draft' as SectionStatus),
+        })),
+      );
     }
   }, [incident]);
 
@@ -55,7 +66,23 @@ export function Review() {
   };
 
   const approveSection = (id: number) => {
-    setSections(sections.map((s) => (s.id === id ? { ...s, status: 'approved' } : s)));
+    const next = sections.map((s): ReportSection =>
+      s.id === id ? { ...s, status: 'approved' } : s,
+    );
+    setSections(next);
+    if (incident) {
+      const ids = next.filter((s) => s.status === 'approved').map((s) => s.id);
+      saveApprovals(incident.id, { approvedSectionIds: ids });
+    }
+    if (expandedSection === id) setExpandedSection(0);
+  };
+
+  const persistAndGo = (path: string) => {
+    if (incident) {
+      const ids = sections.filter((s) => s.status === 'approved').map((s) => s.id);
+      saveApprovals(incident.id, { approvedSectionIds: ids });
+    }
+    navigate(path);
   };
 
   const allApproved = sections.length > 0 && sections.every((s) => s.status === 'approved');
@@ -122,11 +149,14 @@ export function Review() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button className="px-4 py-2 border border-border text-sm tracking-wide hover:bg-surface transition-colors">
+          <button
+            onClick={() => persistAndGo('/archive')}
+            className="px-4 py-2 border border-border text-sm tracking-wide hover:bg-surface transition-colors"
+          >
             SAVE & EXIT
           </button>
           <button
-            onClick={() => navigate(`/finalize/${incident.id}`)}
+            onClick={() => persistAndGo(`/finalize/${incident.id}`)}
             disabled={!allApproved}
             className="px-4 py-2 bg-primary text-primary-foreground text-sm tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
           >
@@ -404,10 +434,10 @@ export function Review() {
                     </span>
                   </button>
 
-                  {isExpanded && section.content && (
+                  {isExpanded && (section.data || section.content) && (
                     <div className="px-4 pb-4 space-y-4">
                       <div className="text-sm leading-relaxed">
-                        {section.content}
+                        <SectionView section={section} />
                         {section.citations.map((cit, idx) => (
                           <sup
                             key={idx}

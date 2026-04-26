@@ -16,9 +16,12 @@ dist/
 .env
 .env.local
 
-# Case media (kept out of git — large binaries)
+# Case media (kept out of git — large binaries). Both standard cases/ path
+# and the non-standard backend/case_*/ path some teammates have used.
 cases/*/video.*
 cases/*/audio.*
+backend/case_*/video.*
+backend/case_*/audio.*
 
 # Cached pipeline output — regenerated on demand from fixtures/sample_qi_review.json
 cases/*/review.json
