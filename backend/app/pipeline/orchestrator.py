@@ -6,6 +6,11 @@ PipelineProgress event for each `running` and `complete` transition so
 the SSE stream and CLI can render live progress. The drafting stage
 now produces a `QICaseReview` (per Step 2 of the QI Case Review
 update); the previous `AARDraft` shape is retired.
+
+Demo mode: if `cases/<id>/upstream_cache.json` is present and
+`use_upstream_cache=True`, the four upstream stages (CAD/PCR/video/audio)
+are replayed from cache with a small visual delay so the SSE UI still
+renders progress, while the four downstream agentic stages run live.
 """
 
 from __future__ import annotations
@@ -31,8 +36,13 @@ from app.schemas import (
     PipelineStage,
     QICaseReview,
 )
+from app.upstream_cache import UpstreamCache, load_upstream_cache
 
 ProgressCallback = Callable[[PipelineProgress], Awaitable[None]]
+
+# Visual delay when replaying a cached upstream stage so the UI still
+# shows the running → complete transition for a moment.
+_CACHE_REPLAY_DELAY_S = 0.3
 
 
 def _now() -> datetime:
@@ -70,27 +80,59 @@ async def _run_stage(
     return result
 
 
-async def process_case(case: Case, progress_callback: ProgressCallback) -> QICaseReview:
-    cad_task = _run_stage(
-        PipelineStage.CAD_PARSING,
-        lambda: safe_cad_parse(case.cad_path),
-        progress_callback,
+async def _replay_cached_stage(stage: PipelineStage, value, progress: ProgressCallback):
+    async def factory():
+        await asyncio.sleep(_CACHE_REPLAY_DELAY_S)
+        return value
+
+    return await _run_stage(stage, factory, progress)
+
+
+async def process_case(
+    case: Case,
+    progress_callback: ProgressCallback,
+    *,
+    use_upstream_cache: bool = True,
+) -> QICaseReview:
+    cache: UpstreamCache | None = (
+        load_upstream_cache(case.case_id) if use_upstream_cache else None
     )
-    pcr_task = _run_stage(
-        PipelineStage.PCR_PARSING,
-        lambda: pcr_parser.parse_pcr(case),
-        progress_callback,
-    )
-    video_task = _run_stage(
-        PipelineStage.VIDEO_ANALYSIS,
-        lambda: video_analyzer.analyze_video(case),
-        progress_callback,
-    )
-    audio_task = _run_stage(
-        PipelineStage.AUDIO_ANALYSIS,
-        lambda: audio_analyzer.analyze_audio(case),
-        progress_callback,
-    )
+
+    if cache is not None:
+        cad_task = _replay_cached_stage(
+            PipelineStage.CAD_PARSING, cache.cad_record, progress_callback
+        )
+        pcr_task = _replay_cached_stage(
+            PipelineStage.PCR_PARSING, cache.pcr_events, progress_callback
+        )
+        video_task = _replay_cached_stage(
+            PipelineStage.VIDEO_ANALYSIS, cache.video_events, progress_callback
+        )
+        audio_task = _replay_cached_stage(
+            PipelineStage.AUDIO_ANALYSIS, cache.audio_events, progress_callback
+        )
+    else:
+        cad_task = _run_stage(
+            PipelineStage.CAD_PARSING,
+            lambda: safe_cad_parse(case.cad_path),
+            progress_callback,
+        )
+        pcr_task = _run_stage(
+            PipelineStage.PCR_PARSING,
+            lambda: pcr_parser.parse_pcr(case),
+            progress_callback,
+        )
+        video_task = _run_stage(
+            PipelineStage.VIDEO_ANALYSIS,
+            lambda: video_analyzer.analyze_video(case),
+            progress_callback,
+        )
+        audio_task = _run_stage(
+            PipelineStage.AUDIO_ANALYSIS,
+            lambda: audio_analyzer.analyze_audio(case),
+            progress_callback,
+        )
+
     cad_record, pcr, video, audio = await asyncio.gather(
         cad_task, pcr_task, video_task, audio_task
     )

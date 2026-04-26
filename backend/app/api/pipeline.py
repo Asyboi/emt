@@ -37,7 +37,10 @@ _DEMO_STAGES: tuple[PipelineStage, ...] = (
 
 
 @router.post("/cases/{case_id}/process")
-async def trigger_process(case_id: str) -> dict[str, str]:
+async def trigger_process(
+    case_id: str,
+    fresh: bool = Query(False, description="Bypass the upstream-stage cache."),
+) -> dict[str, str]:
     try:
         case = load_case(case_id)
     except FileNotFoundError as exc:
@@ -48,7 +51,9 @@ async def trigger_process(case_id: str) -> dict[str, str]:
     async def _noop_progress(_: PipelineProgress) -> None:
         return None
 
-    task = asyncio.create_task(process_case(case, _noop_progress))
+    task = asyncio.create_task(
+        process_case(case, _noop_progress, use_upstream_cache=not fresh)
+    )
     _jobs[job_id] = task
     return {"job_id": job_id, "case_id": case_id}
 
@@ -108,6 +113,7 @@ async def _demo_stream(case_id: str) -> AsyncIterator[dict]:
 async def stream_pipeline(
     case_id: str,
     demo: bool = Query(False, description="Replay the cached AAR instead of running the live pipeline."),
+    fresh: bool = Query(False, description="Bypass the upstream-stage cache and re-run CAD/PCR/video/audio live."),
 ) -> EventSourceResponse:
     try:
         case = load_case(case_id)
@@ -124,7 +130,7 @@ async def stream_pipeline(
 
     async def runner() -> None:
         try:
-            review = await process_case(case, push_progress)
+            review = await process_case(case, push_progress, use_upstream_cache=not fresh)
             try:
                 save_cached_review(case_id, review)
             except Exception as cache_exc:  # noqa: BLE001
