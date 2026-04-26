@@ -216,8 +216,182 @@ adapter + tests.
   blocked by the pre-existing blank-`CASES_DIR=` bug noted under Step 1
   — out of scope here, the unit tests fully cover the wiring.
 
-Next up: Step 6 (route params: `/processing/:caseId` + plumb the new id
-through dashboard, new-report, and the mock data).
+**Step 6 status: ✅ done.** Route params + caseId plumbing.
+- `frontend/src/app/routes.tsx` — `/processing` → `/processing/:caseId`.
+- `frontend/src/app/pages/processing.tsx` — reads `caseId` from
+  `useParams<{ caseId: string }>()`. No more hard-coded
+  `PRIMARY_MOCK_INCIDENT_ID`. In remote mode the page subscribes to
+  the new SSE hook (`useProcessingStream`); in local mode it falls
+  back to `useIncident(caseId)` for the static mock display.
+- `frontend/src/app/pages/dashboard.tsx` — DEMO button now navigates
+  to `/processing/case_01?demo=1` (was `/processing?demo=1`).
+- `frontend/src/app/pages/new-report.tsx` — placeholder navigates to
+  `/processing/case_01` so the path-with-param scheme is reachable
+  before Step 8 lands the real upload + dynamic case_id.
+- `frontend/src/mock/mock_data.ts` — `PRIMARY_INCIDENT_ID` is now
+  `case_01`. `mockIncidentList` rewritten to use `case_01`..`case_10`
+  (case_01 marked `draft` so it routes through `/review/:id`, matching
+  primaryReport.status). `buildMockReport` is unchanged — it already
+  re-keys against the requested id.
+- Auto-navigation: `Processing` runs a `useEffect` that fires a
+  `setTimeout(() => navigate('/review/${caseId}'), 2000)` once the SSE
+  hook reports `isComplete` (remote only — local mode is static, no
+  navigation).
+
+**Step 7 status: ✅ done.** SSE hook + 8-stage data-driven processing page.
+- `frontend/src/data/sse.ts` (new) — `useProcessingStream(caseId,
+  { demo? })` hook. On mount it (a) `POST`s
+  `/api/cases/{id}/process` to kick the live pipeline (skipped when
+  `demo` is true — demo replays the cached review), then (b) opens
+  `new EventSource('${API_BASE}/api/cases/{id}/stream${demo ? '?demo=1' : ''}')`
+  and listens for the three named events the backend emits in
+  `backend/app/api/pipeline.py`: `progress` (parsed as
+  `PipelineProgress` and folded into a `Map<PipelineStage, StageStatus>`),
+  `complete` (parsed as `{ review: QICaseReview }`, run through
+  `adaptReview`, sets `review` + `isComplete`), `error` (data-bearing
+  payload sets `error`; bare connection-close errors after the stream
+  is already nulled are ignored). Wall-clock `elapsedSeconds` ticks
+  via `setInterval(1000)` starting on the first `running` progress
+  event and stops on complete/error. `progressPct` is derived as
+  `completed/total * 100` where `total = 7` for demo runs that don't
+  emit `cad_parsing` and `8` otherwise (matches the wiring prompt's
+  rule: "detect by checking if cad_parsing ever appears in the stage
+  map"). The hook resets all state on caseId change and tears down
+  EventSource + interval on unmount.
+- `frontend/src/app/pages/processing.tsx` — full rewrite. The 6
+  hardcoded SVG-connected cards are gone; the page is now a clean
+  two-row grid driven by a `STAGE_CONFIG` array of 8 entries (1:1 with
+  `PipelineStage`). Row 1 is parallel extraction (CAD SYNC, ePCR
+  PARSER, VIDEO ANALYSIS, AUDIO ANALYSIS) as 4 `StageCard`s in a
+  `grid-cols-4`; row 2 is sequential reasoning (RECONCILIATION,
+  PROTOCOL CHECK, FINDINGS, REPORT DRAFTER), with the recon card
+  rendered by a dedicated `ReconciliationCard` that nests the 3
+  sub-tiles (`cluster`, `review`, `critic`).
+- Recon sub-tile animation: a `useEffect` keyed on the recon stage
+  status from SSE drives a `reconSubIdx` state through 0→1→2 with
+  `setTimeout(2000)` chains when reconciliation enters `running`,
+  jumps to 3 (all complete) on `complete`, and resets to -1 (all
+  waiting) otherwise. In local mode the index is pinned to 3.
+- Headers/status: `caseId` from the route is shown in the page header
+  (was `incident.id`); ELAPSED uses the SSE wall clock in remote mode
+  and the mock pipeline value in local mode; STATUS shows
+  ACTIVE/COMPLETE/ERROR (remote) or "STATIC MOCK" (local). The
+  bottom status bar's 7→8 stage count + complete/active counters are
+  now derived from the live stage map.
+- Logs panel: in remote mode shows "Logs available after processing"
+  (no SSE log channel exists yet — flagged as future work in the
+  prompt). In local mode renders the existing mock `audioLogs`. The
+  audio-analyzer detail drawer + auto-scroll were dropped; they were
+  pure mock UI that has no live equivalent.
+- Verification: `npm run typecheck` clean, `npm test` → 17 passed
+  (no new tests for the SSE hook — it's I/O-heavy and is integration-
+  tested via the verify-step browser flow), `npm run build` succeeds
+  (302 KB JS gzipped 95 KB).
+
+**Step 8 status: ✅ done.** `/new-report` posts a real upload.
+- `frontend/src/app/pages/new-report.tsx` — state types changed from
+  `{name, size}` to `File | null` / `File[]` so the actual `File`
+  references reach the upload. `handleGenerate` is now async: in local
+  mode it still navigates to `/processing/case_01` (preserves the mock
+  flow); in remote mode it builds a `FormData` (`title`, `epcr`,
+  optional `cad`, repeated `videos`), `POST`s it to
+  `${API_BASE}/api/cases`, parses the returned `Case` JSON, and
+  navigates to `/processing/${newCase.case_id}`. Adds `submitting`
+  state (button shows a spinner + "UPLOADING…" label, gates further
+  clicks via `canGenerate`) and `error` state (rendered as a
+  destructive-toned banner above the button on failure). On error the
+  button re-enables; on success the navigate happens before the
+  re-enable, so the page just transitions away.
+- The empty-state Dispatch Audio block (V2/stretch) is unchanged —
+  still disabled, still untyped.
+- The `Case` interface in `frontend/src/types/backend.ts` is the
+  response type. No new dependencies; uses the existing `Loader2`
+  icon from `lucide-react` for the spinner.
+- Verification (frontend only — backend endpoint + smoke covered in
+  Step 1): `npm run typecheck` clean, `npm test` → 17 passed (no new
+  tests; `handleGenerate` is I/O against `fetch` and the existing
+  source-layer fetch tests cover the API_BASE wiring), `npm run build`
+  → 302.93 kB JS / 94.72 kB gzip (no size delta worth noting).
+
+**Step 9 status: ✅ done.** Review video tab plays the backend stream.
+- `frontend/src/app/pages/review.tsx` — the VIDEO tab's "DISPLAY VIDEO
+  FOOTAGE" reveal swapped its placeholder `<Video>` icon block for a
+  real `<video controls preload="metadata">` whose `src` is
+  `${API_BASE}/api/cases/${resolvedId}/video`. The backend endpoint
+  serves `FileResponse` with HTTP Range, so seek/scrub work natively.
+  An empty `<track kind="captions" />` child is included to silence
+  the React/a11y warning about caption tracks; we have nothing to
+  populate it with yet. The "AUDIO ONLY" gate + content-warning copy
+  + "DISPLAY VIDEO FOOTAGE" button are all preserved unchanged — the
+  video element only mounts after the user opts in.
+- The unused `Video` import was dropped; `API_BASE` added to the
+  import block.
+- Notes:
+  - In local mode `API_BASE` is empty so the relative URL passes
+    through the Vite `/api` proxy. If the backend isn't running the
+    `<video>` element will surface the browser's native "no source"
+    error inside the player; the surrounding UI stays intact. Out of
+    scope for this step to add a higher-level fallback.
+  - `cases/case_02` and `case_03` have no `video.mp4` checked in
+    (gitignored per CLAUDE.md), so the video tab will 404 against
+    those by design — case_01 is the demo path with real media.
+- Verification: `npm run typecheck` clean, `npm test` → 17 passed,
+  `npm run build` → 302.93 kB JS / 94.72 kB gzip.
+
+**Step 10/11 status: ✅ done.** Full verification suite + close-out.
+- Backend `uv run ruff check app tests` — 2 errors in
+  `app/pipeline/orchestrator.py` (unused imports `safe_cad_parse` and
+  `CADRecord`). Both pre-existing (last touched in commit `97ba34c`
+  "reconciliation orchestration layer"); `git diff HEAD --
+  backend/app/pipeline/orchestrator.py` is empty. The wiring prompt
+  forbids touching pipeline logic, so these are left for a separate
+  cleanup pass.
+- Backend `uv run pytest -v` — **33 passed, 3 skipped, 2 failed**.
+  The two failures (`test_pcr_parser.py::test_parse_pcr_extracts_events_from_case_01`
+  and `test_drafting.py::test_draft_qi_review_with_real_sonnet`) are
+  the same pre-existing failures flagged in Step 1: blank
+  `CASES_DIR=` / `FIXTURES_DIR=` lines in repo-root `.env` cause
+  pydantic-settings to resolve those paths to the cwd. Reproduces on
+  `main` without these changes; LLM-gated tests that only run when
+  `ANTHROPIC_API_KEY` is set. Tracked separately.
+- Frontend `npm run typecheck` — clean.
+- Frontend `npm test` — **17 passed** (14 adapter + 3 source).
+- Frontend `npm run build` — succeeds, 302.93 kB JS / 94.72 kB gzip.
+
+**Wiring task — done.** Frontend ↔ backend integration is wired end
+to end against the locked `QICaseReview` contract:
+- Vite proxy `/api → :8000` restored.
+- `remoteSource` calls `GET /api/cases` and `GET /api/cases/{id}/review`,
+  adapted via `frontend/src/data/adapters.ts`.
+- SSE wiring on `/processing/:caseId` via `useProcessingStream`
+  (`POST /api/cases/{id}/process` then `EventSource` on
+  `/api/cases/{id}/stream`); processing page is now data-driven over
+  8 stages with derived progress + reconciliation sub-tile animation.
+- `POST /api/cases` multipart endpoint added (epcr/cad/videos/title);
+  `/new-report` page posts FormData and routes to
+  `/processing/{newCase.case_id}`.
+- IDs unified to backend `case_NN` scheme across mock data, routes,
+  and the dashboard DEMO button.
+- Review video tab plays from `GET /api/cases/{id}/video`
+  (`FileResponse` + HTTP Range).
+
+**Acceptance-criteria items still requiring a human in the browser**
+(`docs/wiring_prompt.md` lines 473-486, items 6-9): the curl smokes
+(items 1-5) plus typecheck/build (items 10-11) are covered by the
+verification above; the four browser walkthroughs need the user to
+confirm the rendered flows.
+
+**Remaining follow-ups (out of scope for this task):**
+- Sub-stage SSE events for reconciliation (UI currently fakes
+  cluster→review→critique with `setTimeout` chains).
+- Real PCR extraction from PDF uploads (placeholder `pcr.md` only).
+- Audio log streaming over SSE (logs panel shows "Logs available
+  after processing" in remote mode).
+- Repo-root `.env` `CASES_DIR=` / `FIXTURES_DIR=` blank-value bug
+  causing 2 pytest failures and `.pytest_cache`/`.ruff_cache` to
+  appear in `/api/cases` when uvicorn runs from `backend/`.
+- Pre-existing ruff errors in `app/pipeline/orchestrator.py` (2
+  unused imports).
 
 **Critical files to re-read before resuming** (the audits cite line
 numbers but the underlying files may move):
