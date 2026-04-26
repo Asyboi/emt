@@ -29,7 +29,7 @@ export function Archive() {
       <div className="border-b border-border px-8 py-6 flex items-center justify-between">
         <h1 className="text-lg tracking-wide">SAVED REPORTS</h1>
         <Link
-          to="/"
+          to="/qi-review"
           className="px-5 py-2.5 bg-primary text-primary-foreground text-sm tracking-wide hover:opacity-90 transition-opacity"
         >
           + NEW REPORT
