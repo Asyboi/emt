@@ -4,7 +4,7 @@ import { ArrowLeft, ClipboardCheck, Copy, FileText, Pencil } from 'lucide-react'
 
 import { getPcrDraft } from '../../data/pcr-api';
 import { getDataSource } from '../../data/source';
-import { highlightUnconfirmed } from '../../lib/pcr-highlight';
+import { highlightUnconfirmed, parsePcrSections } from '../../lib/pcr-highlight';
 import type { PCRDraft } from '../../types/backend';
 
 // ── Design tokens (resolved from theme.css :root) ────────────────────────────
@@ -97,13 +97,6 @@ const formatTimestamp = (iso: string | null): string => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-};
-
-const PCR_TOKEN_STYLE: React.CSSProperties = {
-  background: C_HIGHLIGHT,
-  color: C_HIGHLIGHT_TEXT,
-  borderRadius: 2,
-  padding: '0 2px',
 };
 
 // ── Page shell (header bar shared across all sub-states) ─────────────────────
@@ -258,6 +251,200 @@ function PageErrorState({
   );
 }
 
+// ── Structured PCR renderer ──────────────────────────────────────────────────
+// Parses a section body into typed rows and renders each with appropriate
+// typography. Beats <pre> markdown soup: field rows align as a definition
+// list, timestamped events read as a log, free prose flows as paragraphs.
+
+const FIELD_LINE = /^([A-Z][A-Za-z #/.\-]{0,30}):\s{2,}(.+)$/;
+const TIME_LINE = /^(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+)$/;
+
+type SectionRow =
+  | { kind: 'field'; label: string; value: string }
+  | { kind: 'event'; time: string; text: string }
+  | { kind: 'paragraph'; text: string };
+
+function parseSectionBody(content: string): SectionRow[] {
+  const lines = content.split('\n').map((l) => l.trimEnd());
+  const rows: SectionRow[] = [];
+  let buffer: string[] = [];
+
+  const flushParagraph = () => {
+    if (buffer.length === 0) return;
+    const joined = buffer.join(' ').replace(/\s+/g, ' ').trim();
+    if (joined) rows.push({ kind: 'paragraph', text: joined });
+    buffer = [];
+  };
+
+  for (const raw of lines) {
+    if (!raw.trim()) {
+      flushParagraph();
+      continue;
+    }
+    const fm = FIELD_LINE.exec(raw);
+    if (fm) {
+      flushParagraph();
+      rows.push({ kind: 'field', label: fm[1].trim(), value: fm[2].trim() });
+      continue;
+    }
+    const tm = TIME_LINE.exec(raw);
+    if (tm) {
+      flushParagraph();
+      rows.push({ kind: 'event', time: tm[1], text: tm[2].trim() });
+      continue;
+    }
+    buffer.push(raw);
+  }
+  flushParagraph();
+  return rows;
+}
+
+const VALUE_TOKEN_STYLE = {
+  background: C_HIGHLIGHT,
+  color: C_HIGHLIGHT_TEXT,
+  borderRadius: 2,
+  padding: '0 3px',
+};
+
+function FormattedPcr({ text }: { text: string }) {
+  const sections = useMemo(() => parsePcrSections(text), [text]);
+
+  return (
+    <article className="bg-surface border border-border" style={{ background: 'var(--surface)' }}>
+      {sections.map((section, i) => (
+        <PcrSection
+          key={`${section.startLine}-${i}`}
+          header={section.header}
+          rows={parseSectionBody(section.content)}
+          isLast={i === sections.length - 1}
+        />
+      ))}
+    </article>
+  );
+}
+
+function PcrSection({
+  header,
+  rows,
+  isLast,
+}: {
+  header: string;
+  rows: SectionRow[];
+  isLast: boolean;
+}) {
+  return (
+    <section
+      style={{
+        padding: '24px 28px',
+        borderBottom: isLast ? 'none' : '1px solid var(--border)',
+      }}
+    >
+      <h3
+        style={{
+          fontFamily: FONT_MONO,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: '0.16em',
+          color: 'var(--text)',
+          marginBottom: 16,
+          textTransform: 'uppercase',
+        }}
+      >
+        {header}
+      </h3>
+
+      <div className="flex flex-col gap-2.5">
+        {rows.map((row, i) => (
+          <SectionRowView key={i} row={row} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SectionRowView({ row }: { row: SectionRow }) {
+  if (row.kind === 'field') {
+    return (
+      <div
+        className="grid items-baseline"
+        style={{
+          gridTemplateColumns: 'minmax(120px, 160px) 1fr',
+          columnGap: 20,
+        }}
+      >
+        <dt
+          style={{
+            fontFamily: FONT_MONO,
+            fontSize: 10.5,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: 'var(--text-2)',
+          }}
+        >
+          {row.label}
+        </dt>
+        <dd
+          style={{
+            fontSize: 14,
+            color: 'var(--text)',
+            lineHeight: 1.45,
+          }}
+        >
+          {highlightUnconfirmed(row.value, { tokenStyle: VALUE_TOKEN_STYLE })}
+        </dd>
+      </div>
+    );
+  }
+
+  if (row.kind === 'event') {
+    return (
+      <div
+        className="grid items-baseline"
+        style={{
+          gridTemplateColumns: 'minmax(80px, auto) 1fr',
+          columnGap: 16,
+          paddingLeft: 0,
+        }}
+      >
+        <span
+          style={{
+            fontFamily: FONT_MONO,
+            fontSize: 12,
+            color: 'var(--primary-strong)',
+            letterSpacing: '0.04em',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {row.time}
+        </span>
+        <span
+          style={{
+            fontSize: 14,
+            color: 'var(--text)',
+            lineHeight: 1.5,
+          }}
+        >
+          {highlightUnconfirmed(row.text, { tokenStyle: VALUE_TOKEN_STYLE })}
+        </span>
+      </div>
+    );
+  }
+
+  // Paragraph
+  return (
+    <p
+      style={{
+        fontSize: 14.5,
+        color: 'var(--text)',
+        lineHeight: 1.6,
+        maxWidth: '70ch',
+      }}
+    >
+      {highlightUnconfirmed(row.text, { tokenStyle: VALUE_TOKEN_STYLE })}
+    </p>
+  );
+}
+
 // ── Read-only PCR view ───────────────────────────────────────────────────────
 function ReadOnlyPcr({
   caseId,
@@ -269,12 +456,8 @@ function ReadOnlyPcr({
   draft: PCRDraft;
 }) {
   const [copied, setCopied] = useState(false);
+  const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const navigate = useNavigate();
-
-  const highlighted = useMemo(
-    () => highlightUnconfirmed(draft.draft_markdown, { tokenStyle: PCR_TOKEN_STYLE }),
-    [draft.draft_markdown]
-  );
 
   const handleCopy = async () => {
     try {
@@ -289,7 +472,7 @@ function ReadOnlyPcr({
   return (
     <PageShell caseId={caseId} isDemo={isDemo}>
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[800px] px-6 py-8">
+        <div className="mx-auto w-full max-w-[1120px] px-8 py-8">
           {/* Header card */}
           <header className="bg-surface border border-border p-6 mb-5">
             <div
@@ -378,27 +561,72 @@ function ReadOnlyPcr({
             </dl>
           </header>
 
-          {/* Body */}
+          {/* View toggle */}
           <div
-            className="bg-surface border border-border"
-            style={{ background: 'var(--surface)' }}
+            role="tablist"
+            aria-label="PCR view mode"
+            className="flex items-center gap-0 mb-3"
           >
-            <pre
-              className="m-0 overflow-x-auto"
-              style={{
-                fontFamily: FONT_MONO,
-                fontSize: 13,
-                lineHeight: 1.55,
-                padding: 20,
-                whiteSpace: 'pre-wrap',
-                wordWrap: 'break-word',
-                overflowWrap: 'break-word',
-                color: 'var(--text)',
-              }}
-            >
-              {highlighted}
-            </pre>
+            {(['preview', 'code'] as const).map((mode) => {
+              const active = viewMode === mode;
+              return (
+                <button
+                  key={mode}
+                  role="tab"
+                  type="button"
+                  aria-selected={active}
+                  onClick={() => setViewMode(mode)}
+                  className="transition-colors"
+                  style={{
+                    fontFamily: FONT_MONO,
+                    fontSize: 10.5,
+                    letterSpacing: '0.16em',
+                    padding: '7px 14px',
+                    border: '1px solid var(--border)',
+                    borderRight: mode === 'preview' ? 'none' : '1px solid var(--border)',
+                    background: active ? 'var(--text)' : 'transparent',
+                    color: active ? 'var(--surface)' : 'var(--text-2)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {mode}
+                </button>
+              );
+            })}
           </div>
+
+          {/* Body — structured template OR raw markdown, depending on toggle */}
+          {viewMode === 'preview' ? (
+            <FormattedPcr text={draft.draft_markdown} />
+          ) : (
+            <div
+              className="bg-surface border border-border"
+              style={{ background: 'var(--surface)' }}
+            >
+              <pre
+                className="m-0 overflow-x-auto"
+                style={{
+                  fontFamily: FONT_MONO,
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  padding: 20,
+                  whiteSpace: 'pre-wrap',
+                  wordWrap: 'break-word',
+                  overflowWrap: 'break-word',
+                  color: 'var(--text)',
+                }}
+              >
+                {highlightUnconfirmed(draft.draft_markdown, {
+                  tokenStyle: {
+                    background: C_HIGHLIGHT,
+                    color: C_HIGHLIGHT_TEXT,
+                    borderRadius: 2,
+                    padding: '0 2px',
+                  },
+                })}
+              </pre>
+            </div>
+          )}
 
           {/* Action bar */}
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
