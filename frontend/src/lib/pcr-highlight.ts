@@ -1,0 +1,83 @@
+import type { CSSProperties, ReactNode } from 'react';
+import { createElement } from 'react';
+
+const UNCONFIRMED_TOKEN = '[UNCONFIRMED]';
+const SECTION_RULE_RE = /^={20,}$/;
+
+const DEFAULT_TOKEN_STYLE: CSSProperties = {
+  background: 'rgba(184, 115, 46, 0.18)',
+  color: '#7A4C1F',
+  borderRadius: 2,
+  padding: '0 2px',
+};
+
+export interface HighlightOptions {
+  tokenStyle?: CSSProperties;
+  tokenClassName?: string;
+}
+
+export interface PcrSection {
+  header: string;
+  content: string;
+  startLine: number;
+}
+
+export function highlightUnconfirmed(
+  text: string,
+  options: HighlightOptions = {},
+): ReactNode[] {
+  const { tokenStyle, tokenClassName } = options;
+  const style = tokenStyle ?? DEFAULT_TOKEN_STYLE;
+
+  const parts = text.split(UNCONFIRMED_TOKEN);
+  const nodes: ReactNode[] = [];
+  parts.forEach((part, i) => {
+    nodes.push(createElement('span', { key: `p-${i}` }, part));
+    if (i < parts.length - 1) {
+      nodes.push(
+        createElement(
+          'span',
+          {
+            key: `u-${i}`,
+            className: tokenClassName,
+            style,
+          },
+          UNCONFIRMED_TOKEN,
+        ),
+      );
+    }
+  });
+  return nodes;
+}
+
+export function countUnconfirmed(text: string): number {
+  return (text.match(/\[UNCONFIRMED\]/g) ?? []).length;
+}
+
+export function parsePcrSections(text: string): PcrSection[] {
+  const lines = text.split('\n');
+  const anchors: { header: string; startLine: number }[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!SECTION_RULE_RE.test(lines[i].trim())) continue;
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j].trim();
+      if (next && !SECTION_RULE_RE.test(next)) {
+        anchors.push({ header: next, startLine: j });
+        break;
+      }
+    }
+  }
+
+  // Section separators usually appear above AND below a header — only the
+  // first match is the real anchor, so collapse consecutive duplicates.
+  const deduped = anchors.filter(
+    (s, idx) => idx === 0 || s.header !== anchors[idx - 1].header,
+  );
+
+  return deduped.map((anchor, idx) => {
+    const nextStart = deduped[idx + 1]?.startLine ?? lines.length;
+    const content = lines.slice(anchor.startLine + 1, nextStart).join('\n');
+    return { header: anchor.header, content, startLine: anchor.startLine };
+  });
+}

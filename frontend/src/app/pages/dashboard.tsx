@@ -10,6 +10,12 @@ export function Dashboard() {
     navigate('/processing/case_01?demo=1');
   };
 
+  const handlePcrDemo = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigate('/pcr-draft/case_01?demo=1');
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Top bar */}
@@ -73,12 +79,12 @@ export function Dashboard() {
               </div>
             </Link>
 
-            <div
-              aria-disabled="true"
-              className="bg-surface border border-border p-10 flex flex-col justify-between min-h-[280px] opacity-60 cursor-not-allowed"
+            <Link
+              to="/pcr-new"
+              className="group relative bg-surface border border-border p-10 flex flex-col justify-between min-h-[280px] hover:border-primary transition-colors"
             >
               <div>
-                <FileText className="w-10 h-10 text-foreground-secondary mb-6" strokeWidth={1.5} />
+                <FileText className="w-10 h-10 text-primary mb-6" strokeWidth={1.5} />
                 <h3
                   className="text-2xl tracking-wide mb-3 text-foreground"
                   style={{ fontFamily: 'var(--font-sans)' }}
@@ -86,18 +92,29 @@ export function Dashboard() {
                   PCR Generator
                 </h3>
                 <p className="text-sm text-foreground-secondary leading-relaxed">
-                  Draft a structured Patient Care Report from raw notes and source media.
+                  Draft a structured Patient Care Report from body-cam, dispatch audio,
+                  and CAD evidence. Review, edit, and confirm before saving.
                 </p>
               </div>
-              <div className="flex items-center gap-2 mt-8">
-                <span
-                  className="text-[10px] px-2 py-0.5 border border-border bg-background tracking-wider text-foreground-secondary"
+              <div className="flex items-end justify-between mt-8 gap-4">
+                <div
+                  className="text-xs tracking-[0.15em] text-foreground-secondary group-hover:text-primary transition-colors"
                   style={{ fontFamily: 'var(--font-mono)' }}
                 >
-                  COMING SOON
-                </span>
+                  OPEN →
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePcrDemo}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-border bg-background hover:border-primary hover:text-primary transition-colors text-[10px] tracking-[0.15em] text-foreground-secondary"
+                  style={{ fontFamily: 'var(--font-mono)' }}
+                  aria-label="View PCR Generator with local sample data"
+                >
+                  <Play className="w-3 h-3" strokeWidth={1.8} />
+                  DEMO
+                </button>
               </div>
-            </div>
+            </Link>
           </div>
         </div>
       </div>

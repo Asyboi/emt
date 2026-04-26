@@ -5,6 +5,12 @@ import { AlertTriangle, Check, CheckCircle2, Circle, Loader2, RefreshCw } from '
 import { confirmPcrDraft, createPcrDraft } from '../../data/pcr-api';
 import { usePcrDraft } from '../../data/pcr-hooks';
 import { getDataSource } from '../../data/source';
+import {
+  countUnconfirmed,
+  highlightUnconfirmed,
+  parsePcrSections,
+} from '../../lib/pcr-highlight';
+import { PCR_BLANK_TEMPLATE } from '../../lib/pcr-template';
 import type { PCRDraft } from '../../types/backend';
 
 // ── Design tokens (mirror processing.tsx) ────────────────────────────────────
@@ -102,38 +108,6 @@ const formatTimestamp = (iso: string | null): string => {
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 };
 
-const countUnconfirmed = (text: string): number =>
-  (text.match(/\[UNCONFIRMED\]/g) ?? []).length;
-
-interface PcrSection {
-  header: string;
-  startLine: number;
-}
-
-const parsePcrSections = (text: string): PcrSection[] => {
-  const lines = text.split('\n');
-  const sections: PcrSection[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    // Section separator is a run of '=' chars (60+).
-    if (/^={20,}$/.test(line)) {
-      // Header is the next non-empty line after the separator.
-      for (let j = i + 1; j < lines.length; j++) {
-        const next = lines[j].trim();
-        if (next && !/^={20,}$/.test(next)) {
-          sections.push({ header: next, startLine: j });
-          break;
-        }
-      }
-    }
-  }
-  // De-dupe consecutive identical headers (separator usually appears twice
-  // around a header — only the first match is the real anchor).
-  return sections.filter(
-    (s, idx) => idx === 0 || s.header !== sections[idx - 1].header
-  );
-};
-
 // ── Highlight overlay editor ─────────────────────────────────────────────────
 interface EditorProps {
   value: string;
@@ -157,24 +131,14 @@ function HighlightedEditor({ value, onChange, textareaRef }: EditorProps) {
   // Build the highlighted backdrop nodes. Text rendered transparent — only
   // the [UNCONFIRMED] spans show their background fill, and the textarea
   // text floats above thanks to the transparent background on the textarea.
-  const backdropNodes = useMemo(() => {
-    const parts = value.split('[UNCONFIRMED]');
-    const nodes: React.ReactNode[] = [];
-    parts.forEach((p, i) => {
-      nodes.push(<span key={`p-${i}`}>{p}</span>);
-      if (i < parts.length - 1) {
-        nodes.push(
-          <span
-            key={`u-${i}`}
-            style={{ background: C_HIGHLIGHT, borderRadius: 2 }}
-          >
-            [UNCONFIRMED]
-          </span>
-        );
-      }
-    });
-    return nodes;
-  }, [value]);
+  // No padding on the token style so glyph alignment matches the textarea.
+  const backdropNodes = useMemo(
+    () =>
+      highlightUnconfirmed(value, {
+        tokenStyle: { background: C_HIGHLIGHT, borderRadius: 2 },
+      }),
+    [value],
+  );
 
   const sharedTextStyle: React.CSSProperties = {
     fontFamily: FONT_MONO,
@@ -866,7 +830,7 @@ export function PcrDraft() {
   }
 
   const draftForEditor: PCRDraft = forcedManualWrite
-    ? { ...draft, draft_markdown: '', error: null }
+    ? { ...draft, draft_markdown: PCR_BLANK_TEMPLATE, error: null }
     : draft;
 
   return (

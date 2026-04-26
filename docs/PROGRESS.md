@@ -5,6 +5,347 @@ after every meaningful change. Newest entries at the top of each section.
 
 ## In flight
 
+### PCR Auto-Draft — Step 8 complete (2026-04-25)
+
+Status: **`/qi-review` (new-report) now lets you pick a saved PCR
+instead of uploading a fresh ePCR file.** The QI pipeline runs
+unchanged because the backend simply copies the saved PCR's
+`draft_markdown` into `cases/{new_id}/pcr.md` before any pipeline
+work begins. Steps 9 (highlight util) and 10 (blank template) still
+pending.
+
+**What changed:**
+
+- `backend/app/api/cases.py` — `POST /api/cases` accepts a new
+  optional `pcr_source_case_id: str | None = Form(None)`. Behavior:
+  - If provided, look up `pcr_store.load_pcr(pcr_source_case_id)`.
+    Missing → 400 won't do; the spec called for a clear error so
+    the route returns **404** with `Saved PCR not found: {id}`.
+  - If found, write its `draft_markdown` straight to
+    `cases/{new_id}/pcr.md` (no markdown wrapper, no `[PCR content
+    to be extracted]` placeholder). Stage 1a's `pcr_parser` then
+    reads it like any other PCR, so the rest of the pipeline is
+    untouched.
+  - If both `epcr` file *and* `pcr_source_case_id` are sent, the
+    saved PCR wins (its `draft_markdown` overwrites `pcr.md`); the
+    uploaded file is still persisted at `cases/{id}/pcr_source.{ext}`
+    for traceability.
+  - The empty-input guard now also accepts `pcr_source_case_id` as
+    a valid sole input.
+  - `metadata.json` is written when *either* `title` *or*
+    `pcr_source_case_id` is present, with the saved-PCR id captured
+    as `metadata.pcr_source_case_id` so we can trace QI runs back
+    to the auto-drafted PCR they came from.
+- `frontend/src/app/pages/new-report.tsx` — replaced the single
+  ePCR upload zone with a radio-toggled source picker:
+  - `epcrSource` state (`'upload' | 'saved'`, default `'upload'`)
+    controls which sub-block is active. The inactive sub-block is
+    rendered at `opacity-40 pointer-events-none` so the layout
+    doesn't jump but stray clicks don't change hidden state.
+  - `selectedPcrCaseId` state holds the dropdown selection.
+  - `useSavedPcrs()` runs unconditionally (hooks rule); the saved
+    list is rendered as a `<select>` showing
+    `case_id · MM/DD/YYYY HH:MM · confirmed_by`. Empty/loading/
+    error states each render their own mono caption inline.
+  - `canGenerate` now requires either an `epcr` File OR a
+    non-empty `selectedPcrCaseId`, plus the existing CAD-or-video
+    requirement and a non-blank report title.
+  - `handleGenerate` appends `pcr_source_case_id` (saved branch) or
+    `epcr` (upload branch) to the FormData. Submit-time validation
+    surfaces a clear inline error when nothing is selected.
+  - Local mode still navigates straight to `/processing/case_01`
+    without hitting the API.
+
+**Verification — 2026-04-25:**
+
+- `npm run typecheck` — clean.
+- `npm run build` — clean (`1629 modules transformed`,
+  345 kB JS / 103 kB gzip — the radio block adds ~2 kB / <1 kB
+  gzip on top of Step 7).
+- Backend `ruff check app/api/cases.py` — clean. (Repo-wide
+  `ruff check app tests` still flags two pre-existing unused
+  imports in `app/pipeline/orchestrator.py` from the
+  `97ba34c reconciliation orchestration layer` commit — out of
+  scope here.)
+- Backend `pytest -q`: `33 passed, 3 skipped, 2 failed`. The two
+  failures (`test_drafting.py::test_draft_qi_review_with_real_sonnet`
+  and `test_pcr_parser.py::test_parse_pcr_extracts_events_from_case_01`)
+  both die in `case_loader.load_case("case_01")` with
+  `FileNotFoundError: Case not found: case_01`, i.e. they need real
+  case_01 media on disk and an ANTHROPIC key — environmental, not
+  caused by this step.
+
+**Known caveats / what's next:**
+
+- `epcr` upload is still the default radio; no UI hint that "USE
+  SAVED PCR REPORT" is the smoother demo flow. If the demo script
+  decides to always use the saved-PCR path we should default
+  `epcrSource` to `'saved'` whenever `savedPcrs.length > 0`.
+- No "preview saved PCR" link inside the picker. Reviewers have to
+  open `/pcr/{caseId}` in a separate tab to inspect the content
+  before binding it to the new case.
+- Acceptance criterion #11 (saved-PCR picker → real QI pipeline
+  run) is met by code but not exercised against a live backend
+  here. Demo mode short-circuits to `/processing/case_01` so the
+  picker UI is purely cosmetic in `?demo=1`.
+
+**Remaining PCR Auto-Draft steps:**
+
+- Step 9: pull `[UNCONFIRMED]` highlight utility into
+  `frontend/src/lib/pcr-highlight.ts` and refactor pcr-draft.tsx +
+  pcr-view.tsx to consume it.
+- Step 10: blank PCR template constant for "WRITE MANUALLY".
+
+### PCR Auto-Draft frontend — Step 7 complete (2026-04-25)
+
+Status: **Archive page now has a PCR REPORTS tab.** `/archive` keeps
+the existing QI Reviews list under a new "QI REVIEWS" tab and adds a
+sibling "PCR REPORTS" tab that lists every confirmed PCR returned by
+`GET /api/pcr-drafts`. Steps 8–10 (saved-PCR picker on `/qi-review`,
+shared highlight util, blank template) still pending.
+
+**What changed:**
+
+- `frontend/src/app/pages/archive.tsx` — restructured around a tab
+  bar:
+  - Added a horizontal tab bar (mono caps, primary underline on the
+    active tab) directly under the existing top bar. Two tabs:
+    `QI REVIEWS` (default) and `PCR REPORTS`. Active tab is local
+    component state (`useState<Tab>('qi')`); no URL persistence —
+    deep-linking to a specific tab wasn't on the spec and would
+    complicate the demo flow.
+  - The "+ NEW REPORT" button in the top bar now flips to "+ NEW
+    PCR" (linking to `/pcr-new`) when the PCR tab is active, so the
+    primary CTA always matches the visible list.
+  - Search input stays visible across both tabs but its placeholder
+    swaps to `SEARCH BY CASE ID, DATE, CONFIRMED BY` on the PCR tab.
+    Filtering runs against `case_id`, `confirmed_by`, and
+    `confirmed_at` (substring match, case-insensitive) for PCRs.
+  - **PCR table** uses a 6-column grid:
+    `CASE ID | CONFIRMED | CONFIRMED BY | EVENTS | UNCONFIRMED |
+    EDITED` (180/180/140/90/110/90 px). `EVENTS` and `UNCONFIRMED`
+    are right-aligned mono numbers; `UNCONFIRMED` text turns
+    `text-primary` when > 0 to draw the eye to drafts that still
+    have gaps. `EDITED` is a small `EDITED` pill (primary/10 bg)
+    when `emt_edits_made === true`, otherwise an em-dash.
+  - Each row is a `<button>` (matches the existing QI row pattern)
+    that navigates to `/pcr/${case_id}` — adds `?demo=1` when in
+    demo / local mode so the deep link stays offline.
+  - Empty state: `No confirmed PCR reports yet. Generate one from
+    the dashboard.` Swaps to `No PCR reports found matching your
+    search.` once the user has typed in the search box, mirroring
+    the QI tab's behavior.
+- Demo handling: `useSavedPcrs()` always runs (React hooks can't be
+  conditional), but in demo / local mode the page ignores the live
+  result and substitutes a hardcoded `DEMO_SAVED_PCRS` array with a
+  single `case_01` entry whose timestamps and counts match the
+  `DEMO_CONFIRMED_DRAFT` used by `pcr-view.tsx` (Step 5). Loading
+  and error states are also forced to `false` / `null` in demo so
+  the failed `/api/pcr-drafts` fetch (no backend in demo) never
+  surfaces to the user.
+- `formatConfirmedAt(iso: string | null)` helper — local copy
+  (parity with the one in `pcr-view.tsx`). Returns `'—'` for null,
+  `iso` verbatim for unparseable strings, `MM/DD/YYYY HH:MM` in
+  the user's locale otherwise. Step 9 (highlight util) is the
+  natural place to centralise both helpers later.
+
+**Verification — 2026-04-25:**
+
+- `npm run typecheck` — clean.
+- `npm run build` — clean (`1629 modules transformed`, 343 kB JS /
+  103 kB gzip — bundle grew ~4 kB / 1 kB gzip from the tab UI plus
+  the PCR table layout).
+- Manual demo verification: `/archive?demo=1` shows both tabs;
+  default QI tab still renders the mock incident list; clicking
+  PCR REPORTS swaps to the single demo `case_01` row with
+  `20 EVENTS / 6 UNCONFIRMED / —` (no edits); clicking the row
+  navigates to `/pcr/case_01?demo=1` which renders the read-only
+  PCR view from Step 5 with no flicker.
+
+**Known caveats:**
+
+- The demo PCR row is hardcoded in `archive.tsx`. If/when more demo
+  cases are added, this list and the demo drafts in
+  `pcr-draft.tsx` + `pcr-view.tsx` should be unified into a shared
+  `frontend/src/mock/pcr_demo.ts` constant. Out of scope for this
+  step — the spec only asks for the tab itself.
+- Search on the PCR tab does NOT match against `draft_markdown`
+  body content (would require pulling each PCR's full markdown).
+  Hackathon scope: ID + confirmed-by + date is enough.
+- The active tab is component state, not a URL param — refreshing
+  the page always lands you on QI REVIEWS. Cheap to fix later with
+  a `?tab=pcr` param if it becomes annoying during the demo.
+
+**What's next (PCR Auto-Draft remaining steps):**
+
+- Step 8: saved-PCR picker on `/qi-review` (also adds
+  `pcr_source_case_id` form field to backend `POST /api/cases`).
+- Step 9: pull `[UNCONFIRMED]` highlight utility into
+  `frontend/src/lib/pcr-highlight.ts` and refactor pcr-draft.tsx +
+  pcr-view.tsx to consume it.
+- Step 10: blank PCR template constant for "WRITE MANUALLY".
+
+### PCR Auto-Draft frontend — Step 6 complete (2026-04-25)
+
+Status: **Dashboard PCR Generator card activated.** The right card on
+`/` is now a live entry point into the auto-draft flow, mirroring the
+QI Review card's interaction pattern. Steps 7–10 (archive PCR tab,
+/qi-review PCR picker, shared highlight util, blank template) still
+pending.
+
+**What changed:**
+
+- `frontend/src/app/pages/dashboard.tsx` — replaced the disabled
+  `<div aria-disabled="true">` PCR Generator card with a live
+  `<Link to="/pcr-new">`. Card now follows the same shape as the QI
+  Review card on the left:
+  - Same `group hover:border-primary` interaction; `min-h-[280px]`,
+    `bg-surface border border-border p-10` shell unchanged.
+  - `FileText` icon recolored from `text-foreground-secondary` →
+    `text-primary` to match the QI card's `ClipboardCheck`.
+  - Body copy expanded slightly to name the inputs the flow actually
+    accepts ("body-cam, dispatch audio, and CAD evidence") and the
+    review/edit/confirm interaction.
+  - Footer row matches the QI card: left `OPEN →` mono caption,
+    right DEMO button (`Play` icon + `DEMO` label) wired through a
+    new `handlePcrDemo` handler that `preventDefault`s the wrapping
+    Link and `navigate('/pcr-draft/case_01?demo=1')`. Two
+    handlers (`handleDemo`, `handlePcrDemo`) sit side-by-side at the
+    top of the component for parity.
+  - `COMING SOON` badge removed entirely (no replacement — the live
+    `OPEN →` caption + DEMO button are the call to action).
+
+**Verification — 2026-04-25:**
+
+- `npm run typecheck` — clean.
+- `npm run build` — clean (`1629 modules transformed`, 338 kB JS /
+  102 kB gzip — bundle size unchanged from Step 5 since no new
+  imports were added; `FileText` and `Play` were already imported).
+- Manual demo verification: `/` shows both cards as active; clicking
+  the PCR card body navigates to `/pcr-new`; clicking the inner
+  DEMO button navigates to `/pcr-draft/case_01?demo=1` without also
+  triggering the outer Link (the `e.preventDefault()` +
+  `e.stopPropagation()` pattern from `handleDemo` carries over).
+
+**Known caveats:**
+
+- The DEMO button's destination (`/pcr-draft/case_01?demo=1`)
+  depends on `pcr-draft.tsx` Step 4's `?demo=1` short-circuit, which
+  inlines a `DEMO_PENDING_DRAFT` rather than polling the backend.
+  Confirming inside the demo flow then deep-links to
+  `/pcr/case_01?demo=1` (Step 5's `DEMO_CONFIRMED_DRAFT`), so the
+  whole demo path is end-to-end offline.
+- No DEMO button keyboard shortcut yet (the QI card's DEMO button
+  has the same gap). Not on the Step 6 spec — leaving for a polish
+  pass.
+
+**What's next (PCR Auto-Draft remaining steps):**
+
+- Step 7: archive PCR tab (`/archive` gets a "PCR REPORTS" tab using
+  `useSavedPcrs`).
+- Step 8: saved-PCR picker on `/qi-review` (also adds
+  `pcr_source_case_id` form field to backend `POST /api/cases`).
+- Step 9: pull `[UNCONFIRMED]` highlight utility into
+  `frontend/src/lib/pcr-highlight.ts` and refactor pcr-draft.tsx +
+  pcr-view.tsx to consume it.
+- Step 10: blank PCR template constant for "WRITE MANUALLY".
+
+### PCR Auto-Draft frontend — Step 5 complete (2026-04-25)
+
+Status: **/pcr/:caseId read-only PCR view shipped, route wired.** Closes
+the post-confirm 404 caveat that Step 4 left open — the CONFIRM PCR
+button now lands on a real page in both demo and live modes. Steps 6–10
+(dashboard PCR card, archive PCR tab, /qi-review PCR picker, shared
+highlight util, blank template) still pending.
+
+**What changed:**
+
+- `frontend/src/app/pages/pcr-view.tsx` — new page. Single centered
+  column (max 800 px) with three sub-states:
+  - **Loading:** "Loading PCR…" placeholder while `getPcrDraft` is
+    in flight.
+  - **Not confirmed:** when the fetched draft has
+    `status !== 'confirmed'`, shows a small card explaining the PCR
+    isn't confirmed yet plus GO TO DRAFT and BACK TO ARCHIVE links.
+    Catches the case where someone bookmarks `/pcr/:id` before
+    confirming.
+  - **Read-only:** header card with title "PATIENT CARE REPORT", case
+    id + confirmed-at + confirmed-by, three status badges
+    (CONFIRMED green, X UNCONFIRMED REMAINING amber if > 0, EMT
+    EDITED blue if `emt_edits_made`), and a 3-column evidence-stats
+    grid (video / audio / total events). Body is a `<pre>` with the
+    same monospace 13 px / 1.55 line-height token used by the editor;
+    `[UNCONFIRMED]` tokens get the same amber overlay (`C_HIGHLIGHT`,
+    `C_HIGHLIGHT_TEXT`) but are not editable. Action bar at the
+    bottom: BACK TO ARCHIVE on the left; COPY (uses
+    `navigator.clipboard.writeText`, briefly flips to "COPIED" with a
+    green check) and EDIT (navigates to `/pcr-draft/:caseId` to
+    re-enter the edit flow) on the right.
+  - **Error:** identical small-card layout when `getPcrDraft` rejects
+    (e.g. 404 if no draft exists for that case yet) — message + BACK
+    TO ARCHIVE.
+- All four sub-states share a `PageShell` that renders the same top
+  bar as `pcr-draft.tsx` (CALYX home link · "PCR / case_id" ·
+  optional DEMO pill · SAVED REPORTS link to `/archive`) so the
+  edit→view→edit cycle stays visually continuous.
+- `frontend/src/app/routes.tsx` — added `/pcr/:caseId` under
+  `QIReviewLayout` immediately after `pcr-draft/:caseId`, matching
+  the existing pattern.
+- Demo / local mode: when `?demo=1` is set or
+  `getDataSource().mode === 'local'`, the page short-circuits the
+  fetch and renders an inlined `DEMO_CONFIRMED_DRAFT` (status =
+  `confirmed`, the same cardiac-arrest body the draft page demos,
+  six unconfirmed tokens preserved). The case id from the URL is
+  spliced into the demo draft so deep links like
+  `/pcr/case_42?demo=1` still display the requested id in the header.
+
+**Verification — 2026-04-25:**
+
+- `npm run typecheck` — clean (caught one unused `C_BORDER` token on
+  first pass; removed).
+- `npm run build` — clean (`1629 modules transformed`, 338 kB JS /
+  102 kB gzip — bundle grew ~12 kB over Step 4 for the new page and
+  its share of `lucide-react` icons (`ArrowLeft`, `ClipboardCheck`,
+  `Copy`, `FileText`, `Pencil`)).
+- Manual demo verification: `/pcr/case_01?demo=1` renders the
+  read-only view with all three badges correctly absent except
+  CONFIRMED + 6 UNCONFIRMED REMAINING (the demo draft has
+  `emt_edits_made: false`).
+
+**Known caveats:**
+
+- The highlight utility is still inlined in `pcr-view.tsx` (now in
+  *two* places — also `pcr-draft.tsx`). Step 9
+  (`frontend/src/lib/pcr-highlight.ts`) is the obvious follow-up;
+  when it lands, both files should import the shared
+  `highlightUnconfirmed` / `countUnconfirmed` helpers and drop their
+  local copies.
+- The page reads the draft via `getPcrDraft` (which returns the
+  per-case `pcr_draft.json`), not via the saved-PCR store. Once
+  Step 1's `pcr_store` lands, `/pcr/:caseId` will still work — the
+  per-case draft is the source of truth for the read-only view —
+  but the archive PCR tab (Step 7) will need a different fetcher
+  (`listSavedPcrs`).
+- `navigator.clipboard.writeText` silently no-ops in non-secure
+  contexts (e.g. plain HTTP). Not worth a fallback in this hackathon
+  scope; the EDIT button is the load-bearing action.
+- No print-friendly CSS yet. The spec listed `window.print()` as an
+  alternative to COPY — went with COPY only since it's the more
+  common QI workflow (paste into a follow-up email or CAD note).
+
+**What's next (PCR Auto-Draft remaining steps):**
+
+- Step 6: activate the dashboard PCR Generator card (link target
+  `/pcr-new`, demo target `/pcr-draft/case_01?demo=1`).
+- Step 7: archive PCR tab (will use `useSavedPcrs` once the backend
+  store lands).
+- Step 8: saved-PCR picker on `/qi-review` (also adds
+  `pcr_source_case_id` form field to backend `POST /api/cases`).
+- Step 9: pull `[UNCONFIRMED]` highlight utility into
+  `frontend/src/lib/pcr-highlight.ts` and refactor pcr-draft.tsx +
+  pcr-view.tsx to consume it.
+- Step 10: blank PCR template constant for "WRITE MANUALLY".
+
 ### PCR Auto-Draft frontend — Step 4 complete (2026-04-25)
 
 Status: **/pcr-draft/:caseId draft review page shipped, route wired.** The

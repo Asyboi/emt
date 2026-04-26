@@ -2,8 +2,20 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Loader2, Upload, X } from 'lucide-react';
 import { API_BASE } from '../../data/api';
+import { useSavedPcrs } from '../../data/pcr-hooks';
 import { getDataSource } from '../../data/source';
 import type { Case } from '../../types/backend';
+
+type EpcrSource = 'upload' | 'saved';
+
+const FONT_MONO = 'var(--font-mono)';
+
+const formatSavedAt = (iso: string | null): string => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+};
 
 export function NewReport() {
   const navigate = useNavigate();
@@ -13,11 +25,23 @@ export function NewReport() {
   const [videos, setVideos] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [epcrSource, setEpcrSource] = useState<EpcrSource>('upload');
+  const [selectedPcrCaseId, setSelectedPcrCaseId] = useState<string>('');
+
+  const isLocal = getDataSource().mode === 'local';
+  const {
+    pcrs: savedPcrs,
+    loading: savedPcrsLoading,
+    error: savedPcrsError,
+  } = useSavedPcrs();
+
+  const epcrProvided =
+    epcrSource === 'upload' ? epcr !== null : selectedPcrCaseId.length > 0;
 
   const canGenerate =
     !submitting &&
     reportTitle.trim().length > 0 &&
-    epcr !== null &&
+    epcrProvided &&
     (cad !== null || videos.length > 0);
 
   const handleFileUpload = (
@@ -40,19 +64,27 @@ export function NewReport() {
 
   const handleGenerate = async () => {
     setError(null);
-    if (getDataSource().mode === 'local') {
+    if (isLocal) {
       navigate('/processing/case_01');
       return;
     }
-    if (!epcr) {
+    if (epcrSource === 'upload' && !epcr) {
       setError('ePCR file is required.');
+      return;
+    }
+    if (epcrSource === 'saved' && !selectedPcrCaseId) {
+      setError('Select a saved PCR.');
       return;
     }
     setSubmitting(true);
     try {
       const form = new FormData();
       form.append('title', reportTitle);
-      form.append('epcr', epcr);
+      if (epcrSource === 'upload' && epcr) {
+        form.append('epcr', epcr);
+      } else if (epcrSource === 'saved' && selectedPcrCaseId) {
+        form.append('pcr_source_case_id', selectedPcrCaseId);
+      }
       if (cad) form.append('cad', cad);
       videos.forEach((v) => form.append('videos', v));
       const res = await fetch(`${API_BASE}/api/cases`, {
@@ -115,39 +147,140 @@ export function NewReport() {
               {/* Divider */}
               <div className="border-t border-border" />
 
-              {/* ePCR Upload */}
+              {/* ePCR Source — upload a file OR pick a saved confirmed PCR */}
               <div>
                 <label className="block text-xs tracking-wide mb-2 text-foreground-secondary">
-                  ePCR FILE (PDF/XML)
+                  ePCR SOURCE
                 </label>
-                <div className="border border-border bg-background p-4">
-                  {epcr ? (
-                    <div className="flex items-center justify-between">
-                      <div style={{ fontFamily: 'var(--font-mono)' }} className="text-sm">
-                        <div className="text-foreground">{epcr.name}</div>
-                        <div className="text-xs text-foreground-secondary">{formatSize(epcr.size)}</div>
-                      </div>
-                      <button
-                        onClick={() => setEpcr(null)}
-                        className="p-1 hover:text-destructive transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="block cursor-pointer">
+                <div className="border border-border bg-background">
+                  {/* Upload option */}
+                  <div className="p-4 border-b border-border">
+                    <label className="flex items-center gap-3 cursor-pointer mb-3">
                       <input
-                        type="file"
-                        accept=".pdf,.xml"
-                        onChange={handleFileUpload(setEpcr)}
-                        className="hidden"
+                        type="radio"
+                        name="epcr-source"
+                        value="upload"
+                        checked={epcrSource === 'upload'}
+                        onChange={() => setEpcrSource('upload')}
+                        className="accent-primary"
                       />
-                      <div className="flex items-center gap-2 text-sm text-foreground-secondary hover:text-foreground transition-colors">
-                        <Upload className="w-4 h-4" />
-                        <span className="tracking-wide">CHOOSE FILE</span>
-                      </div>
+                      <span
+                        className="text-xs tracking-wide"
+                        style={{ fontFamily: FONT_MONO }}
+                      >
+                        UPLOAD ePCR FILE (PDF/XML)
+                      </span>
                     </label>
-                  )}
+
+                    <div
+                      className={
+                        epcrSource === 'upload'
+                          ? 'pl-7'
+                          : 'pl-7 opacity-40 pointer-events-none'
+                      }
+                    >
+                      {epcr ? (
+                        <div className="flex items-center justify-between">
+                          <div
+                            style={{ fontFamily: FONT_MONO }}
+                            className="text-sm"
+                          >
+                            <div className="text-foreground">{epcr.name}</div>
+                            <div className="text-xs text-foreground-secondary">
+                              {formatSize(epcr.size)}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEpcr(null)}
+                            className="p-1 hover:text-destructive transition-colors"
+                            aria-label="Remove ePCR file"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label className="block cursor-pointer">
+                          <input
+                            type="file"
+                            accept=".pdf,.xml"
+                            onChange={handleFileUpload(setEpcr)}
+                            className="hidden"
+                          />
+                          <div className="flex items-center gap-2 text-sm text-foreground-secondary hover:text-foreground transition-colors">
+                            <Upload className="w-4 h-4" />
+                            <span className="tracking-wide">CHOOSE FILE</span>
+                          </div>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Saved-PCR option */}
+                  <div className="p-4">
+                    <label className="flex items-center gap-3 cursor-pointer mb-3">
+                      <input
+                        type="radio"
+                        name="epcr-source"
+                        value="saved"
+                        checked={epcrSource === 'saved'}
+                        onChange={() => setEpcrSource('saved')}
+                        className="accent-primary"
+                      />
+                      <span
+                        className="text-xs tracking-wide"
+                        style={{ fontFamily: FONT_MONO }}
+                      >
+                        USE SAVED PCR REPORT
+                      </span>
+                    </label>
+
+                    <div
+                      className={
+                        epcrSource === 'saved'
+                          ? 'pl-7'
+                          : 'pl-7 opacity-40 pointer-events-none'
+                      }
+                    >
+                      {savedPcrsLoading ? (
+                        <div
+                          className="text-xs text-foreground-secondary"
+                          style={{ fontFamily: FONT_MONO }}
+                        >
+                          Loading saved PCRs…
+                        </div>
+                      ) : savedPcrsError ? (
+                        <div
+                          className="text-xs text-destructive"
+                          style={{ fontFamily: FONT_MONO }}
+                        >
+                          Could not load saved PCRs: {savedPcrsError.message}
+                        </div>
+                      ) : savedPcrs.length === 0 ? (
+                        <div
+                          className="text-xs text-foreground-secondary"
+                          style={{ fontFamily: FONT_MONO }}
+                        >
+                          No confirmed PCRs yet. Generate one from the dashboard.
+                        </div>
+                      ) : (
+                        <select
+                          value={selectedPcrCaseId}
+                          onChange={(e) => setSelectedPcrCaseId(e.target.value)}
+                          className="w-full bg-background border border-border px-3 py-2 text-sm outline-none focus:border-primary"
+                          style={{ fontFamily: FONT_MONO }}
+                        >
+                          <option value="">— SELECT A PCR —</option>
+                          {savedPcrs.map((p) => (
+                            <option key={p.case_id} value={p.case_id}>
+                              {p.case_id} · {formatSavedAt(p.confirmed_at)}
+                              {p.confirmed_by ? ` · ${p.confirmed_by}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 

@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from app.case_loader import load_pcr_content
 from app.pipeline import (
     audio_analyzer,
-    cad_parser,
     drafting,
     findings as findings_stage,
     pcr_parser,
@@ -27,7 +26,6 @@ from app.pipeline import (
 )
 from app.pipeline.cad_parser import safe_cad_parse
 from app.schemas import (
-    CADRecord,
     Case,
     PipelineProgress,
     PipelineStage,

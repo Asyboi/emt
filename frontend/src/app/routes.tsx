@@ -6,6 +6,7 @@ import { Dashboard } from "./pages/dashboard";
 import { NewReport } from "./pages/new-report";
 import { PcrDraft } from "./pages/pcr-draft";
 import { PcrNew } from "./pages/pcr-new";
+import { PcrView } from "./pages/pcr-view";
 import { Processing } from "./pages/processing";
 import { Review } from "./pages/review";
 import { Finalize } from "./pages/finalize";
@@ -38,6 +39,10 @@ export const router = createBrowserRouter([
           {
             path: "pcr-draft/:caseId",
             Component: PcrDraft,
+          },
+          {
+            path: "pcr/:caseId",
+            Component: PcrView,
           },
           {
             path: "processing/:caseId",

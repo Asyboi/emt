@@ -17,6 +17,7 @@ from app.case_loader import (
     next_case_id,
 )
 from app.config import settings
+from app.pcr_store import load_pcr as load_saved_pcr
 from app.schemas import Case, QICaseReview
 
 router = APIRouter(tags=["cases"])
@@ -39,19 +40,44 @@ async def create_case(
     cad: UploadFile | None = File(None),
     audio: UploadFile | None = File(None),
     videos: list[UploadFile] | None = File(None),
+    pcr_source_case_id: str | None = Form(None),
 ) -> Case:
     """Create a new case from uploaded files.
 
     All uploads are optional so this endpoint serves both flows:
-    the QI Review page (which uploads an ePCR) and the PCR Auto-Draft
-    page (which uploads only video/audio/CAD and lets the AI draft the PCR).
-    At least one of epcr/video/audio/cad must be provided.
+    the QI Review page (which uploads an ePCR or selects a saved PCR) and
+    the PCR Auto-Draft page (which uploads only video/audio/CAD and lets
+    the AI draft the PCR). At least one of epcr/video/audio/cad/
+    pcr_source_case_id must be provided.
+
+    When ``pcr_source_case_id`` is provided, the saved PCR's
+    ``draft_markdown`` is copied into the new case's ``pcr.md`` so the
+    QI pipeline's PCR parser can read it without modification. The saved
+    PCR takes precedence over an uploaded ePCR file if both are sent.
     """
-    if epcr is None and not videos and audio is None and cad is None:
+    if (
+        epcr is None
+        and not videos
+        and audio is None
+        and cad is None
+        and not pcr_source_case_id
+    ):
         raise HTTPException(
             status_code=400,
-            detail="At least one of epcr, audio, video, or cad must be provided.",
+            detail=(
+                "At least one of epcr, audio, video, cad, or "
+                "pcr_source_case_id must be provided."
+            ),
         )
+
+    saved_pcr = None
+    if pcr_source_case_id:
+        saved_pcr = load_saved_pcr(pcr_source_case_id)
+        if saved_pcr is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Saved PCR not found: {pcr_source_case_id}",
+            )
 
     ext: str | None = None
     if epcr is not None:
@@ -77,7 +103,12 @@ async def create_case(
     case_dir = settings.CASES_DIR.resolve() / case_id
     case_dir.mkdir(parents=True, exist_ok=False)
 
-    if epcr is not None and ext is not None:
+    # Saved PCR wins over uploaded ePCR file when both are provided.
+    if saved_pcr is not None:
+        (case_dir / "pcr.md").write_text(saved_pcr.draft_markdown, encoding="utf-8")
+        if epcr is not None and ext is not None:
+            (case_dir / f"pcr_source.{ext}").write_bytes(await epcr.read())
+    elif epcr is not None and ext is not None:
         (case_dir / f"pcr_source.{ext}").write_bytes(await epcr.read())
         (case_dir / "pcr.md").write_text(
             f"# ePCR\n\nSource file: {epcr.filename or 'pcr_source'}\n\n[PCR content to be extracted]\n",
@@ -94,9 +125,14 @@ async def create_case(
         first_video = videos[0]
         (case_dir / "video.mp4").write_bytes(await first_video.read())
 
-    if title:
+    if title or pcr_source_case_id:
+        meta: dict[str, str] = {}
+        if title:
+            meta["title"] = title
+        if pcr_source_case_id:
+            meta["pcr_source_case_id"] = pcr_source_case_id
         (case_dir / "metadata.json").write_text(
-            json.dumps({"title": title}, indent=2),
+            json.dumps(meta, indent=2),
             encoding="utf-8",
         )
 
