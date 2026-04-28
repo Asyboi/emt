@@ -1,4 +1,4 @@
-# Sentinel
+# Calyx
 
 Agentic system for EMS quality review — turns Patient Care Reports
 (PCR), body-cam video, dispatch audio, and CAD records into a
@@ -16,7 +16,7 @@ structured recommendations.
 ## TL;DR — run it in 3 minutes
 
 ```bash
-git clone https://github.com/Asyboi/emt.git sentinel && cd sentinel
+git clone https://github.com/Asyboi/emt.git calyx && cd calyx
 
 # Terminal A — backend
 cd backend && uv sync && uv run uvicorn app.main:app --reload
@@ -30,8 +30,12 @@ open http://localhost:5173
 
 The frontend lands on a marketing page — click into the app and
 either pick a cached case (no API keys needed) or upload a new one to
-trigger the live pipeline. Click any **Finding** card → the body-cam
-seeks to that second AND the matching PCR sentence is highlighted.
+trigger the live pipeline. The QI Review page shows a 3D ambulance
+simulation that follows the body-cam timeline; clicking the **Report**
+button opens a bento grid of section tiles (timeline, findings,
+protocol checks, recommendations, etc.). Click any **Finding** card →
+the body-cam seeks to that second AND the matching PCR sentence is
+highlighted.
 
 ---
 
@@ -76,6 +80,13 @@ What it does:
   been retired). On startup the backend auto-migrates legacy
   `cases/*/aar.json` files to `review.json` if they parse against the
   current schema.
+- For demos, run [`scripts/warm_cache.py`](backend/scripts/warm_cache.py)
+  once per case to pre-bake the four slow upstream stages
+  (CAD/PCR/video/audio) into `cases/<id>/upstream_cache.json`. The
+  next live run replays those stages instantly while the four
+  downstream agentic stages (reconciliation → protocol-check →
+  findings → drafting) still run live against the LLMs. See
+  `DEMO_UPSTREAM_CACHE_CASE_ID` below.
 
 How to start it:
 
@@ -95,7 +106,7 @@ http://localhost:5173?remote
 Use **New Report** in the UI to upload an ePCR (PDF/XML), CAD JSON,
 audio, and video — or pick a previously confirmed PCR from the
 saved-PCR picker on the same page. Or use **PCR Auto-Draft** to skip
-the ePCR entirely and have Sentinel generate one from media before
+the ePCR entirely and have Calyx generate one from media before
 running QI review. Confirmed drafts also show up in the **Archive**
 tab and have a read-only view at `/pcr/:caseId`.
 
@@ -105,7 +116,8 @@ tab and have a read-only view at `/pcr/:caseId`.
 `QICaseReview` over Server-Sent Events with the same event shape as
 the live pipeline (running/complete per stage with small synthetic
 delays). Useful for demo videos and offline presentations whenever a
-review is already cached on disk.
+review is already cached on disk. The frontend's demo navigation
+strip only appears when `?demo=1` is in the URL.
 
 ---
 
@@ -125,6 +137,7 @@ Copy `.env.example` to `.env` at the **repo root** (not inside
 | `PROTOCOLS_DIR` | Protocol checker | Optional — defaults to `../protocols` |
 | `FIXTURES_DIR` | Backend stubs / seed | Optional — defaults to `../fixtures` |
 | `FRONTEND_ORIGINS` | CORS allowlist (comma-separated) | Optional — defaults to `http://localhost:5173` |
+| `DEMO_UPSTREAM_CACHE_CASE_ID` | Reuse one case's warmed `upstream_cache.json` for fresh uploads (so PCR Auto-Draft demos skip Gemini/Scribe) | Optional — defaults to `case_01` |
 | `VITE_API_URL` | Frontend production build only | Set this when deploying the frontend separately from the backend |
 | `VITE_DATA_SOURCE` | Frontend default source (`local` or `remote`) | Optional — overridden by `?local` / `?remote` URL params |
 
@@ -159,10 +172,12 @@ cases/
     pcr_draft.json        # PCR auto-draft state (status, markdown, edits)
     cad.json              # NYC EMS CAD record
     review.json           # cached QICaseReview (gitignored)
+    upstream_cache.json   # warmed CAD/PCR/video/audio results (gitignored)
     audio.mp3             # gitignored
     video.mp4             # gitignored
-  case_02/
-  case_03/
+  case_04/
+  case_05/
+  case_06/
 ```
 
 Confirmed PCR auto-drafts are also persisted to `pcr_store/<case>.json`
@@ -221,6 +236,19 @@ audio in parallel, then reconciliation → protocol-check → findings →
 drafting), and prints the resulting `QICaseReview` as JSON. Same
 `.env` rules apply.
 
+### Pre-warm the upstream cache for a demo
+
+```bash
+cd backend
+uv run python scripts/warm_cache.py case_01            # run if missing
+uv run python scripts/warm_cache.py case_01 --force    # rebuild
+```
+
+Writes `cases/<id>/upstream_cache.json` with the CAD/PCR/video/audio
+results so subsequent live runs (and any new uploads that point at
+this case via `DEMO_UPSTREAM_CACHE_CASE_ID`) skip Gemini and Scribe
+and only burn LLM budget on the four downstream agentic stages.
+
 ### Reset a cached review
 
 ```bash
@@ -246,7 +274,7 @@ empty.
 | `DELETE` | `/api/cases/{id}/review` | Clear the cache (Reset) |
 | `GET` | `/api/cases/{id}/video` | `FileResponse` of the body-cam video (range support) |
 | `POST` | `/api/cases/{id}/process` | Background job (returns `{job_id, case_id}`) |
-| `GET` | `/api/cases/{id}/stream` | **SSE pipeline stream** (live) |
+| `GET` | `/api/cases/{id}/stream` | **SSE pipeline stream** (live; replays warmed upstream stages from cache when present) |
 | `GET` | `/api/cases/{id}/stream?demo=1` | SSE replay of the cached `QICaseReview` |
 | `POST` | `/api/cases/{id}/pcr-draft` | Trigger PCR auto-draft (video + audio + CAD → markdown) |
 | `GET` | `/api/cases/{id}/pcr-draft` | Poll the current `PCRDraft` |
@@ -270,6 +298,7 @@ backend/                    FastAPI + pipeline orchestrator (v0.3.0)
     schemas.py              **single source of truth** for data contracts
     case_loader.py          cases/ I/O, review.json cache + legacy aar.json migration
     pcr_store.py            persistent confirmed-PCR store (pcr_store/{case}.json)
+    upstream_cache.py       warmed CAD/PCR/video/audio cache (demo skip-Gemini/Scribe path)
     llm_clients.py          Anthropic / Gemini / ElevenLabs wrappers
     prompts.py              all LLM prompts + tool schemas
     api/
@@ -288,7 +317,9 @@ backend/                    FastAPI + pipeline orchestrator (v0.3.0)
       findings.py           Claude Sonnet 4.6 — five-category grounded findings
       drafting.py           Claude Sonnet 4.6 — QICaseReview synthesis
       pcr_drafter.py        Claude Sonnet 4.6 — PCR auto-draft (pre-pipeline)
-  scripts/run_pipeline.py   CLI runner
+  scripts/
+    run_pipeline.py         CLI runner
+    warm_cache.py           pre-bake upstream_cache.json for a case
   tests/                    pytest, asyncio_mode=auto
 frontend/                   Vite + React 18 + TS + Tailwind + React Router
   src/
@@ -297,8 +328,15 @@ frontend/                   Vite + React 18 + TS + Tailwind + React Router
       App.tsx               <RouterProvider />
       routes.tsx            Landing + Layout + QIReviewLayout route tree
       landing/              marketing page + sections
-      pages/                dashboard, new-report, pcr-new, pcr-draft, pcr-view, processing, review, finalize, archive
-      components/           layout, qi-review-layout, demo-nav, ui/ (shadcn-style), figma/
+      pages/                dashboard, new-report (qi-review), pcr-new, pcr-draft, pcr-view, processing, review, review-report, finalize, archive
+      components/
+        layout.tsx, app-navbar.tsx, demo-nav.tsx, qi-review-layout.tsx, filing.tsx
+        AmbulanceSimulation/    3D ambulance + Mapbox route + event callouts (review page)
+        pipeline/               agentic processing visualization (AgentCard, ModelPill, ParallelBox, StageLogs, etc.)
+        section-tiles/          bento-grid previews on the report page
+        section-views/          full-screen section views (timeline, findings, recommendations, etc.)
+        ui/                     shadcn-style primitives
+        figma/                  imported figma assets
     lib/
       pcr-highlight.ts      [UNCONFIRMED] highlighter, count, section parser (shared by draft + view)
       pcr-template.ts       PCR_BLANK_TEMPLATE for manual writing fallback
@@ -310,13 +348,15 @@ frontend/                   Vite + React 18 + TS + Tailwind + React Router
       hooks.ts              useIncident / useIncidentList
       pcr-api.ts            PCR auto-draft client
       pcr-hooks.ts          React hooks for PCR draft polling
+      approvals.ts          per-section approval state for the report page
     types/backend.ts        **mirror of backend/app/schemas.py**
     types.ts                UI-facing IncidentReport / IncidentSummary types
     mock/mock_data.ts       offline mock fixtures (?local mode)
+    mock/mock_pcr.ts        offline PCR auto-draft fixtures
     styles/                 tailwind.css, theme.css, fonts.css
   vite.config.ts            /api/* proxy to :8000, `figma:asset/` resolver
   vitest.config.ts          unit tests for adapters + source
-cases/                      case bundles (PCR/audio/video/cad/review.json)
+cases/                      case bundles (PCR/audio/video/cad/review.json/upstream_cache.json)
 pcr_store/                  persistent confirmed PCR drafts (created on first confirm)
 protocols/                  protocol definitions (placeholder — rules live in pipeline/protocol_check.py)
 fixtures/sample_qi_review.json    canonical demo QI review (seeded into case_01)
@@ -373,3 +413,13 @@ cd backend && uv run python -c "from app.config import settings; print(bool(sett
 `localhost:8000`. If the backend isn't running in `?remote` mode the
 EventSource sits open until it times out. Switch to `?local` for
 mock-only UI work, or start the backend.
+
+**Demo run is too slow / burning Gemini quota** — pre-warm the
+upstream cache once with
+`uv run python scripts/warm_cache.py case_01`. The next live SSE run
+replays CAD/PCR/video/audio from `upstream_cache.json` and only the
+four downstream agentic stages hit the LLM.
+
+---
+
+© 2026 Calyx. All rights reserved.
