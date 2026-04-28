@@ -422,4 +422,4 @@ four downstream agentic stages hit the LLM.
 
 ---
 
-© 2026 Calyx. All rights reserved.
+© 2026 Andres Lopez, Aslan Wang, Donggyu Yoon. All rights reserved.
